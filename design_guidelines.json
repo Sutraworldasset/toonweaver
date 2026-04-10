@@ -1,0 +1,119 @@
+{
+  "theme": "dark",
+  "archetype": "Archetype 4 (Swiss & High-Contrast)",
+  "rationale": "For a 3D animation production pipeline like Toonweaver, the environment should resemble professional software like Maya, Blender, or Nuke. High-contrast dark mode reduces eye strain during long rendering or animating sessions while allowing colorful shot renders to stand out. The 'Control Room' dense aesthetic prioritizes function, status visibility, and technical precision.",
+  "colors": {
+    "background": "bg-zinc-950",
+    "surface": "bg-zinc-900",
+    "surface_hover": "bg-zinc-800",
+    "border": "border-zinc-800",
+    "border_subtle": "border-zinc-800/50",
+    "text_primary": "text-zinc-50",
+    "text_secondary": "text-zinc-400",
+    "text_muted": "text-zinc-500",
+    "primary": "bg-blue-600",
+    "primary_hover": "bg-blue-500",
+    "primary_text": "text-white",
+    "status": {
+      "approved": {
+        "bg": "bg-emerald-500/10",
+        "border": "border-emerald-500/20",
+        "text": "text-emerald-500",
+        "indicator": "bg-emerald-500"
+      },
+      "retake": {
+        "bg": "bg-red-500/10",
+        "border": "border-red-500/20",
+        "text": "text-red-400",
+        "indicator": "bg-red-500"
+      },
+      "in_progress": {
+        "bg": "bg-amber-500/10",
+        "border": "border-amber-500/20",
+        "text": "text-amber-400",
+        "indicator": "bg-amber-500"
+      },
+      "not_started": {
+        "bg": "bg-zinc-800/50",
+        "border": "border-zinc-700",
+        "text": "text-zinc-300",
+        "indicator": "bg-zinc-500"
+      }
+    }
+  },
+  "typography": {
+    "font_heading": "font-sans",
+    "font_body": "font-mono",
+    "setup_instructions": "Use IBM Plex Sans for general body text to give a highly legible, data-heavy feel, and Chivo for bold, technical headings.",
+    "h1": "text-3xl sm:text-4xl font-bold tracking-tight text-zinc-50",
+    "h2": "text-2xl sm:text-3xl font-semibold tracking-tight text-zinc-50",
+    "h3": "text-xl sm:text-2xl font-medium tracking-tight text-zinc-100",
+    "h4": "text-lg sm:text-xl font-medium text-zinc-200",
+    "body": "text-sm text-zinc-300 leading-relaxed",
+    "label": "text-xs font-semibold uppercase tracking-[0.1em] text-zinc-500"
+  },
+  "layout": {
+    "spacing_system": "Dense 'Control Room' Grid",
+    "container_padding": "p-4 md:p-6 lg:p-8",
+    "gap_tight": "gap-2",
+    "gap_standard": "gap-4",
+    "gap_loose": "gap-6",
+    "radius": "rounded-md",
+    "cards": "bg-zinc-900 border border-zinc-800 shadow-sm rounded-md",
+    "panels": "bg-zinc-950 border-r border-zinc-800",
+    "grid_bento": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4",
+    "grid_technical": "border-collapse border-border/40"
+  },
+  "components": {
+    "button": {
+      "primary": "bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2 rounded-md transition-colors data-[testid]:true",
+      "secondary": "bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 font-medium px-4 py-2 rounded-md transition-colors data-[testid]:true",
+      "ghost": "hover:bg-zinc-800/50 text-zinc-300 hover:text-white px-4 py-2 rounded-md transition-colors data-[testid]:true"
+    },
+    "input": "bg-zinc-950 border border-zinc-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-zinc-100 rounded-md px-3 py-2 text-sm placeholder:text-zinc-600",
+    "badge": "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border",
+    "avatar": "h-8 w-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-xs font-medium text-zinc-300",
+    "table": {
+      "header": "bg-zinc-900 text-xs font-semibold text-zinc-400 uppercase tracking-wider text-left p-3 border-b border-zinc-800",
+      "row": "border-b border-zinc-800 hover:bg-zinc-800/30 transition-colors",
+      "cell": "p-3 text-sm text-zinc-300 whitespace-nowrap"
+    },
+    "dropzone": "border-2 border-dashed border-zinc-700 hover:border-blue-500 hover:bg-blue-500/5 rounded-md p-8 flex flex-col items-center justify-center text-center transition-all",
+    "chat_bubble": "bg-zinc-800/50 border border-zinc-800/80 rounded-lg p-3 text-sm text-zinc-300",
+    "sidebar": "w-64 flex-shrink-0 border-r border-zinc-800 bg-zinc-950 flex flex-col h-full",
+    "header_nav": "h-14 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 sticky top-0 z-40"
+  },
+  "interactions_and_motion": {
+    "hover": "Subtle background shifts (e.g. hover:bg-zinc-800/50). Never rely solely on color shifts for accessibility.",
+    "focus": "High contrast ring focus:ring-2 focus:ring-blue-500 focus:outline-none",
+    "transitions": "transition-all duration-200 ease-in-out",
+    "active": "scale-[0.98] transition-transform"
+  },
+  "icons": {
+    "library": "lucide-react",
+    "instructions": "Use Lucide React for crisp, scalable vector icons. Ensure stroke-width is set to 1.5 or 2 for high legibility."
+  },
+  "media_urls": {
+    "login_background": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/cdb8553e-ccf0-471d-81ed-c93aeed5709b/images/787937f3152fa446854c22ecbf0f765adce8fbdf2775a689fe595aaef5ce4bf6.png",
+      "description": "Cinematic 3D software viewport interface showing a wireframe rendering. Dark and technical. Perfect for the right half of the split-screen login page. Must use a dark overlay bg-zinc-950/40 to ensure any potential overlay text is readable.",
+      "category": "hero_background"
+    },
+    "project_thumbnail": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/cdb8553e-ccf0-471d-81ed-c93aeed5709b/images/06194f8a88f4c513f25bb55bb5f386baab8913a911355e65e70de5297ee0ce0a.png",
+      "description": "A high-quality 3D rendered character in a forest, cinematic lighting. Use as a placeholder thumbnail for projects or shots.",
+      "category": "placeholder_image"
+    }
+  },
+  "accessibility_and_testing": {
+    "test_ids": "CRITICAL: All interactive elements (buttons, inputs, links, dropdowns, specific cards) MUST include data-testid. Example: data-testid='login-submit-button', data-testid='shot-status-badge', data-testid='download-bat-btn'.",
+    "contrast": "Ensure text contrast on primary buttons is 4.5:1. Primary text on bg-blue-600 must be pure white. Status text uses lighter shades (e.g., text-red-400) against dark backgrounds for visibility.",
+    "roles": "Use semantic HTML elements (nav, header, main, section, aside) to wrap layout regions."
+  },
+  "specific_page_instructions": {
+    "login": "Use a split layout. Left side: Form with Toonweaver branding, centered in a max-w-sm container. Right side: Full height image ('login_background') with object-cover and a subtle black overlay. Form elements must have solid borders.",
+    "layout_shell": "A classic dashboard layout: Left sidebar for main navigation (Projects, Team, Settings), Top header for breadcrumbs, profile, and search. Main content area below header.",
+    "animator_dashboard": "Prominently display the 'Download M: Drive Mapper' action at the top of the dashboard. Use an attention-grabbing card with a 'Terminal/Retro-Futurism' vibe (green/blue accent) to signify technical utility. Below that, a data-dense table or grid of 'My Shots'.",
+    "shot_details_view": "Split panel layout. Left side: Shot details, current file links (OneDrive), and a large dropzone for new submissions. Right side: Feedback thread, styled like a chat window with timestamped comments (bg-zinc-800/50 chat bubbles) and file attachments."
+  }
+}
