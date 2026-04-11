@@ -15,6 +15,13 @@ import {
     DialogTrigger,
 } from '../components/ui/dialog';
 import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '../components/ui/select';
+import {
     AlertDialog,
     AlertDialogAction,
     AlertDialogCancel,
@@ -25,9 +32,19 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from '../components/ui/alert-dialog';
-import { FolderKanban, Plus, Trash2, Users, Calendar } from 'lucide-react';
+import { FolderKanban, Plus, Trash2, Users, Calendar, Link as LinkIcon, Image, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+
+const linkTypes = [
+    { value: 'onedrive', label: 'OneDrive' },
+    { value: 'google_drive', label: 'Google Drive' },
+    { value: 'google_docs', label: 'Google Docs' },
+    { value: 'dropbox', label: 'Dropbox' },
+    { value: 'other', label: 'Other' },
+];
+
+const defaultThumbnail = "https://static.prod-images.emergentagent.com/jobs/cdb8553e-ccf0-471d-81ed-c93aeed5709b/images/06194f8a88f4c513f25bb55bb5f386baab8913a911355e65e70de5297ee0ce0a.png";
 
 export default function ProjectsPage() {
     const { isAdmin, isProductionManager } = useAuth();
@@ -40,8 +57,10 @@ export default function ProjectsPage() {
     const [formData, setFormData] = useState({
         name: '',
         description: '',
-        onedrive_link: '',
+        thumbnail_url: '',
+        drive_links: [],
     });
+    const [newLink, setNewLink] = useState({ name: '', url: '', link_type: 'google_drive' });
 
     useEffect(() => {
         loadProjects();
@@ -58,6 +77,25 @@ export default function ProjectsPage() {
         }
     };
 
+    const handleAddLink = () => {
+        if (!newLink.name.trim() || !newLink.url.trim()) {
+            toast.error('Please enter link name and URL');
+            return;
+        }
+        setFormData({
+            ...formData,
+            drive_links: [...formData.drive_links, { ...newLink }]
+        });
+        setNewLink({ name: '', url: '', link_type: 'google_drive' });
+    };
+
+    const handleRemoveLink = (index) => {
+        setFormData({
+            ...formData,
+            drive_links: formData.drive_links.filter((_, i) => i !== index)
+        });
+    };
+
     const handleCreate = async (e) => {
         e.preventDefault();
         if (!formData.name.trim()) {
@@ -70,7 +108,7 @@ export default function ProjectsPage() {
             await createProject(formData);
             toast.success('Project created successfully');
             setCreateOpen(false);
-            setFormData({ name: '', description: '', onedrive_link: '' });
+            setFormData({ name: '', description: '', thumbnail_url: '', drive_links: [] });
             loadProjects();
         } catch (error) {
             toast.error('Failed to create project');
@@ -116,13 +154,13 @@ export default function ProjectsPage() {
                                 New Project
                             </Button>
                         </DialogTrigger>
-                        <DialogContent className="bg-zinc-900 border-zinc-800">
+                        <DialogContent className="bg-zinc-900 border-zinc-800 max-w-xl max-h-[90vh] overflow-y-auto">
                             <DialogHeader>
                                 <DialogTitle className="text-zinc-100">Create New Project</DialogTitle>
                             </DialogHeader>
                             <form onSubmit={handleCreate} className="space-y-4 mt-4">
                                 <div className="space-y-2">
-                                    <Label className="text-zinc-300">Project Name</Label>
+                                    <Label className="text-zinc-300">Project Name *</Label>
                                     <Input
                                         value={formData.name}
                                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -142,16 +180,110 @@ export default function ProjectsPage() {
                                         data-testid="project-description-input"
                                     />
                                 </div>
+                                
+                                {/* Thumbnail URL */}
                                 <div className="space-y-2">
-                                    <Label className="text-zinc-300">OneDrive Folder Link</Label>
+                                    <Label className="text-zinc-300 flex items-center gap-2">
+                                        <Image className="w-4 h-4" />
+                                        Project Thumbnail URL
+                                    </Label>
                                     <Input
-                                        value={formData.onedrive_link}
-                                        onChange={(e) => setFormData({ ...formData, onedrive_link: e.target.value })}
-                                        placeholder="https://onedrive.live.com/..."
+                                        value={formData.thumbnail_url}
+                                        onChange={(e) => setFormData({ ...formData, thumbnail_url: e.target.value })}
+                                        placeholder="https://example.com/image.jpg"
                                         className="bg-zinc-950 border-zinc-800 text-zinc-100"
-                                        data-testid="project-onedrive-input"
+                                        data-testid="project-thumbnail-input"
                                     />
+                                    {formData.thumbnail_url && (
+                                        <div className="mt-2 rounded-lg overflow-hidden border border-zinc-800 h-32">
+                                            <img 
+                                                src={formData.thumbnail_url} 
+                                                alt="Preview" 
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => e.target.src = defaultThumbnail}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
+
+                                {/* Drive Links */}
+                                <div className="space-y-3">
+                                    <Label className="text-zinc-300 flex items-center gap-2">
+                                        <LinkIcon className="w-4 h-4" />
+                                        Project Drive Links
+                                    </Label>
+                                    
+                                    {/* Existing links */}
+                                    {formData.drive_links.length > 0 && (
+                                        <div className="space-y-2">
+                                            {formData.drive_links.map((link, index) => (
+                                                <div key={index} className="flex items-center gap-2 p-2 rounded-lg bg-zinc-800/50 border border-zinc-700">
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium text-zinc-200 truncate">{link.name}</p>
+                                                        <p className="text-xs text-zinc-500 truncate">{link.url}</p>
+                                                    </div>
+                                                    <span className="text-xs px-2 py-1 rounded bg-zinc-700 text-zinc-300 capitalize">
+                                                        {link.link_type.replace('_', ' ')}
+                                                    </span>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        onClick={() => handleRemoveLink(index)}
+                                                        className="text-zinc-500 hover:text-red-400 h-8 w-8"
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </Button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Add new link */}
+                                    <div className="p-3 rounded-lg bg-zinc-800/30 border border-zinc-700 space-y-3">
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <Input
+                                                value={newLink.name}
+                                                onChange={(e) => setNewLink({ ...newLink, name: e.target.value })}
+                                                placeholder="Link name (e.g., Reference Images)"
+                                                className="bg-zinc-900 border-zinc-700 text-zinc-100 text-sm"
+                                                data-testid="link-name-input"
+                                            />
+                                            <Select
+                                                value={newLink.link_type}
+                                                onValueChange={(v) => setNewLink({ ...newLink, link_type: v })}
+                                            >
+                                                <SelectTrigger className="bg-zinc-900 border-zinc-700" data-testid="link-type-select">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent className="bg-zinc-900 border-zinc-800">
+                                                    {linkTypes.map((type) => (
+                                                        <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <Input
+                                                value={newLink.url}
+                                                onChange={(e) => setNewLink({ ...newLink, url: e.target.value })}
+                                                placeholder="https://drive.google.com/..."
+                                                className="flex-1 bg-zinc-900 border-zinc-700 text-zinc-100 text-sm"
+                                                data-testid="link-url-input"
+                                            />
+                                            <Button
+                                                type="button"
+                                                onClick={handleAddLink}
+                                                variant="secondary"
+                                                className="bg-zinc-700 hover:bg-zinc-600"
+                                                data-testid="add-link-button"
+                                            >
+                                                <Plus className="w-4 h-4" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="flex justify-end gap-3 pt-4">
                                     <Button
                                         type="button"
@@ -183,7 +315,7 @@ export default function ProjectsPage() {
                         <FolderKanban className="w-16 h-16 mx-auto mb-4 text-zinc-600" />
                         <h3 className="text-lg font-medium text-zinc-300 mb-2">No projects yet</h3>
                         <p className="text-zinc-500 mb-4">
-                        {canManageProjects ? 'Create your first project to get started' : 'You have not been assigned to any projects'}
+                            {canManageProjects ? 'Create your first project to get started' : 'You have not been assigned to any projects'}
                         </p>
                     </CardContent>
                 </Card>
@@ -199,9 +331,10 @@ export default function ProjectsPage() {
                             <CardContent className="p-0">
                                 <div className="aspect-video bg-zinc-800 overflow-hidden">
                                     <img
-                                        src="https://static.prod-images.emergentagent.com/jobs/cdb8553e-ccf0-471d-81ed-c93aeed5709b/images/06194f8a88f4c513f25bb55bb5f386baab8913a911355e65e70de5297ee0ce0a.png"
+                                        src={project.thumbnail_url || defaultThumbnail}
                                         alt={project.name}
                                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                        onError={(e) => e.target.src = defaultThumbnail}
                                     />
                                 </div>
                                 <div className="p-4">
@@ -250,6 +383,12 @@ export default function ProjectsPage() {
                                             <Users className="w-3 h-3" />
                                             {project.team_members?.length || 0} members
                                         </div>
+                                        {project.drive_links?.length > 0 && (
+                                            <div className="flex items-center gap-1">
+                                                <LinkIcon className="w-3 h-3" />
+                                                {project.drive_links.length} links
+                                            </div>
+                                        )}
                                         <div className="flex items-center gap-1">
                                             <Calendar className="w-3 h-3" />
                                             {format(new Date(project.created_at), 'MMM d, yyyy')}

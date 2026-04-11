@@ -254,29 +254,42 @@ export default function ProjectDetailPage() {
                     <h1 className="text-3xl font-bold text-zinc-50 font-['Chivo']">{project.name}</h1>
                     <p className="text-zinc-400 mt-1">{project.description || 'No description'}</p>
                 </div>
-                {project.onedrive_link && (
-                    <div className="flex gap-2">
-                        <Button
-                            variant="outline"
-                            onClick={() => window.open(project.onedrive_link, '_blank')}
-                            className="border-zinc-700 text-zinc-300"
-                            data-testid="open-onedrive-button"
-                        >
-                            <ExternalLink className="w-4 h-4 mr-2" />
-                            Open OneDrive
-                        </Button>
-                        <Button
-                            variant="outline"
-                            onClick={() => window.open(getDriveMapperUrl(projectId), '_blank')}
-                            className="border-zinc-700 text-zinc-300"
-                            data-testid="download-bat-button"
-                        >
-                            <Download className="w-4 h-4 mr-2" />
-                            Download .bat
-                        </Button>
-                    </div>
-                )}
+                <Button
+                    variant="outline"
+                    onClick={() => window.open(getDriveMapperUrl(projectId), '_blank')}
+                    className="border-zinc-700 text-zinc-300"
+                    data-testid="download-bat-button"
+                >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download .bat
+                </Button>
             </div>
+
+            {/* Drive Links */}
+            {project.drive_links && project.drive_links.length > 0 && (
+                <Card className="bg-zinc-900 border-zinc-800">
+                    <CardContent className="p-4">
+                        <div className="flex flex-wrap gap-2">
+                            {project.drive_links.map((link, index) => (
+                                <Button
+                                    key={index}
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => window.open(link.url, '_blank')}
+                                    className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                                    data-testid={`drive-link-${index}`}
+                                >
+                                    <ExternalLink className="w-3 h-3 mr-2" />
+                                    {link.name}
+                                    <span className="ml-2 text-xs text-zinc-500 capitalize">
+                                        ({link.link_type?.replace('_', ' ') || 'link'})
+                                    </span>
+                                </Button>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Tabs */}
             <Tabs defaultValue="shots" className="space-y-6">

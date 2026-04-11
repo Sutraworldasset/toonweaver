@@ -76,15 +76,22 @@ class UserResponse(BaseModel):
     role: str
     created_at: datetime
 
+class DriveLink(BaseModel):
+    name: str
+    url: str
+    link_type: Optional[str] = ""  # onedrive, google_drive, google_docs, etc.
+
 class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = ""
-    onedrive_link: Optional[str] = ""
+    thumbnail_url: Optional[str] = ""
+    drive_links: Optional[List[DriveLink]] = []
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    onedrive_link: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    drive_links: Optional[List[DriveLink]] = None
 
 class TeamMemberAdd(BaseModel):
     user_id: str
@@ -341,9 +348,10 @@ async def create_project(project: ProjectCreate, user: dict = Depends(get_curren
     project_doc = {
         "name": project.name,
         "description": project.description,
-        "onedrive_link": project.onedrive_link,
+        "thumbnail_url": project.thumbnail_url or "",
+        "drive_links": [link.model_dump() for link in project.drive_links] if project.drive_links else [],
         "created_by": user["id"],
-        "team_members": [{"user_id": user["id"], "role": "admin"}],
+        "team_members": [{"user_id": user["id"], "role": user["role"]}],
         "created_at": datetime.now(timezone.utc)
     }
     result = await db.projects.insert_one(project_doc)
@@ -381,7 +389,14 @@ async def update_project(project_id: str, update: ProjectUpdate, user: dict = De
     if user["role"] not in ["admin", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only admin or production manager can update projects")
     
-    update_data = {k: v for k, v in update.model_dump().items() if v is not None}
+    update_data = {}
+    for k, v in update.model_dump().items():
+        if v is not None:
+            if k == "drive_links" and v:
+                update_data[k] = [link if isinstance(link, dict) else link.model_dump() for link in v]
+            else:
+                update_data[k] = v
+    
     if not update_data:
         raise HTTPException(status_code=400, detail="No update data provided")
     
@@ -719,7 +734,20 @@ async def generate_bat_file(project_id: str, user: dict = Depends(get_current_us
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    onedrive_link = project.get("onedrive_link", "")
+    drive_links = project.get("drive_links", [])
+    # Find the first OneDrive or Google Drive link for mapping
+    primary_link = ""
+    for link in drive_links:
+        if link.get("link_type") in ["onedrive", "google_drive"] or "onedrive" in link.get("url", "").lower() or "drive.google" in link.get("url", "").lower():
+            primary_link = link.get("url", "")
+            break
+    if not primary_link and drive_links:
+        primary_link = drive_links[0].get("url", "")
+    
+    # Generate links section for the bat file
+    links_section = ""
+    for i, link in enumerate(drive_links):
+        links_section += f"echo   {i+1}. {link.get('name', 'Link')}: {link.get('url', '')}\n"
     
     bat_content = f"""@echo off
 :: Toonweaver Drive Mapper
@@ -733,6 +761,10 @@ echo  Project: {project['name']}
 echo ============================================
 echo.
 
+echo Project Links:
+{links_section if links_section else "echo   No links configured"}
+echo.
+
 :: Check if M: drive is already mapped
 if exist M:\\ (
     echo M: drive is already mapped.
@@ -741,17 +773,16 @@ if exist M:\\ (
     echo.
 )
 
-:: OneDrive WebDAV path
-:: Replace with your OneDrive WebDAV URL
-set ONEDRIVE_PATH={onedrive_link if onedrive_link else "https://your-onedrive-url"}
+:: Primary Drive path
+set DRIVE_PATH={primary_link if primary_link else "https://your-drive-url"}
 
-echo Mapping M: drive to OneDrive...
-echo Path: %ONEDRIVE_PATH%
+echo Mapping M: drive...
+echo Path: %DRIVE_PATH%
 echo.
 
 :: Map the network drive
-:: For OneDrive, you may need to use RaiDrive or configure WebDAV
-net use M: "%ONEDRIVE_PATH%" /persistent:yes
+:: For OneDrive/Google Drive, you may need to use RaiDrive or configure WebDAV
+net use M: "%DRIVE_PATH%" /persistent:yes
 
 if %errorlevel% equ 0 (
     echo.
@@ -759,13 +790,12 @@ if %errorlevel% equ 0 (
     echo You can now access project files at M:\\
 ) else (
     echo.
-    echo FAILED to map drive. Please check:
-    echo 1. Your OneDrive link is correct
-    echo 2. You are connected to the internet
-    echo 3. You have access to the shared folder
+    echo FAILED to map drive automatically.
     echo.
-    echo TIP: For OneDrive, consider using RaiDrive for easier mounting.
+    echo RECOMMENDED: Use RaiDrive for easier cloud drive mounting.
     echo Download RaiDrive: https://www.raidrive.com/
+    echo.
+    echo Or access your files directly via the links above.
 )
 
 echo.
