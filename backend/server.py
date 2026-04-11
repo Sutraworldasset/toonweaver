@@ -489,13 +489,21 @@ async def get_shots(project_id: str, status: Optional[str] = None, user: dict = 
     
     shots = await db.shots.find(query).to_list(1000)
     
-    # Get assigned user names
+    # Batch fetch all assigned users to avoid N+1 queries
+    user_ids = list(set([s.get("assigned_to") for s in shots if s.get("assigned_to")]))
+    user_map = {}
+    if user_ids:
+        users = await db.users.find(
+            {"_id": {"$in": [ObjectId(uid) for uid in user_ids]}}, 
+            {"name": 1}
+        ).to_list(1000)
+        user_map = {str(u["_id"]): u["name"] for u in users}
+    
     result = []
     for s in shots:
         shot_data = {"id": str(s["_id"]), **{k: v for k, v in s.items() if k != "_id"}}
         if s.get("assigned_to"):
-            assigned_user = await db.users.find_one({"_id": ObjectId(s["assigned_to"])}, {"name": 1})
-            shot_data["assigned_to_name"] = assigned_user["name"] if assigned_user else "Unknown"
+            shot_data["assigned_to_name"] = user_map.get(s["assigned_to"], "Unknown")
         result.append(shot_data)
     
     return result
@@ -505,12 +513,20 @@ async def get_assigned_shots(user: dict = Depends(get_current_user)):
     """Get all shots assigned to current user across all projects"""
     shots = await db.shots.find({"assigned_to": user["id"]}).to_list(1000)
     
+    # Batch fetch all project names to avoid N+1 queries
+    project_ids = list(set([s["project_id"] for s in shots]))
+    project_map = {}
+    if project_ids:
+        projects = await db.projects.find(
+            {"_id": {"$in": [ObjectId(pid) for pid in project_ids]}},
+            {"name": 1}
+        ).to_list(1000)
+        project_map = {str(p["_id"]): p["name"] for p in projects}
+    
     result = []
     for s in shots:
         shot_data = {"id": str(s["_id"]), **{k: v for k, v in s.items() if k != "_id"}}
-        # Get project name
-        project = await db.projects.find_one({"_id": ObjectId(s["project_id"])}, {"name": 1})
-        shot_data["project_name"] = project["name"] if project else "Unknown"
+        shot_data["project_name"] = project_map.get(s["project_id"], "Unknown")
         result.append(shot_data)
     
     return result
@@ -805,9 +821,15 @@ async def health_check():
 app.include_router(api_router)
 
 # CORS Configuration
+cors_origins = os.environ.get("CORS_ORIGINS", "*")
+if cors_origins == "*":
+    allow_origins_list = ["*"]
+else:
+    allow_origins_list = [origin.strip() for origin in cors_origins.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.environ.get("FRONTEND_URL", "http://localhost:3000")],
+    allow_origins=allow_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
