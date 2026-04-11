@@ -11,8 +11,9 @@ Toonweaver is a full-stack web application for managing 3D animation production 
 
 ## User Roles
 1. **Admin** - Full system access, project creation, user management
-2. **Supervisor** - Shot management, review, feedback
-3. **Animator** - View assigned shots, submit work, view feedback
+2. **Production Manager** - Project management, team management, shot oversight (new)
+3. **Supervisor** - Shot management, review, feedback
+4. **Animator** - View assigned shots, submit work, view feedback
 
 ## Core Requirements (Static)
 - JWT-based authentication with role-based access control

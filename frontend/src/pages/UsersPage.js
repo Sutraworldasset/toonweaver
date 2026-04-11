@@ -25,12 +25,14 @@ import { format } from 'date-fns';
 
 const roleConfig = {
     admin: { label: 'Admin', icon: Shield, color: 'text-red-400' },
+    production_manager: { label: 'Production Manager', icon: UserCog, color: 'text-purple-400' },
     supervisor: { label: 'Supervisor', icon: UserCog, color: 'text-amber-400' },
     animator: { label: 'Animator', icon: User, color: 'text-blue-400' },
 };
 
 export default function UsersPage() {
-    const { isAdmin } = useAuth();
+    const { isAdmin, isProductionManager } = useAuth();
+    const canManageRoles = isAdmin || isProductionManager;
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -67,6 +69,7 @@ export default function UsersPage() {
 
     const roleStats = {
         admin: users.filter(u => u.role === 'admin').length,
+        production_manager: users.filter(u => u.role === 'production_manager').length,
         supervisor: users.filter(u => u.role === 'supervisor').length,
         animator: users.filter(u => u.role === 'animator').length,
     };
@@ -153,12 +156,12 @@ export default function UsersPage() {
                                             </TableCell>
                                             <TableCell className="text-zinc-400">{user.email}</TableCell>
                                             <TableCell>
-                                                {isAdmin ? (
+                                                {canManageRoles ? (
                                                     <Select
                                                         value={user.role}
                                                         onValueChange={(value) => handleRoleChange(user.id, value)}
                                                     >
-                                                        <SelectTrigger className="w-36 bg-zinc-800 border-zinc-700" data-testid={`role-select-${user.id}`}>
+                                                        <SelectTrigger className="w-44 bg-zinc-800 border-zinc-700" data-testid={`role-select-${user.id}`}>
                                                             <div className="flex items-center gap-2">
                                                                 <config.icon className={`w-4 h-4 ${config.color}`} />
                                                                 <SelectValue />
@@ -166,6 +169,7 @@ export default function UsersPage() {
                                                         </SelectTrigger>
                                                         <SelectContent className="bg-zinc-900 border-zinc-800">
                                                             <SelectItem value="admin">Admin</SelectItem>
+                                                            <SelectItem value="production_manager">Production Manager</SelectItem>
                                                             <SelectItem value="supervisor">Supervisor</SelectItem>
                                                             <SelectItem value="animator">Animator</SelectItem>
                                                         </SelectContent>

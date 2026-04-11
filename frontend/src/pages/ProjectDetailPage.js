@@ -73,7 +73,9 @@ const statusOptions = [
 
 export default function ProjectDetailPage() {
     const { projectId } = useParams();
-    const { isAdmin, isSupervisor, user } = useAuth();
+    const { isAdmin, isProductionManager, isSupervisor, user } = useAuth();
+    const canManageProjects = isAdmin || isProductionManager;
+    const canManageShots = isAdmin || isProductionManager || isSupervisor;
     const navigate = useNavigate();
     
     const [project, setProject] = useState(null);
@@ -115,7 +117,7 @@ export default function ProjectDetailPage() {
             setProject(projectRes.data);
             setShots(shotsRes.data);
 
-            if (isAdmin || isSupervisor) {
+            if (canManageProjects || isSupervisor) {
                 const [usersRes, activityRes] = await Promise.all([
                     getUsers(),
                     getActivityLog(projectId),
@@ -283,7 +285,7 @@ export default function ProjectDetailPage() {
                         <Clapperboard className="w-4 h-4 mr-2" />
                         Shots
                     </TabsTrigger>
-                    {(isAdmin || isSupervisor) && (
+                    {(canManageProjects || isSupervisor) && (
                         <>
                             <TabsTrigger value="team" className="data-[state=active]:bg-zinc-800">
                                 <Users className="w-4 h-4 mr-2" />
@@ -323,7 +325,7 @@ export default function ProjectDetailPage() {
                                 ))}
                             </SelectContent>
                         </Select>
-                        {(isAdmin || isSupervisor) && (
+                        {canManageShots && (
                             <Dialog open={createShotOpen} onOpenChange={setCreateShotOpen}>
                                 <DialogTrigger asChild>
                                     <Button className="bg-blue-600 hover:bg-blue-500" data-testid="create-shot-button">
@@ -450,7 +452,7 @@ export default function ProjectDetailPage() {
                                                 <TableCell className="font-medium text-zinc-100">{shot.shot_id}</TableCell>
                                                 <TableCell className="text-zinc-400">{shot.frame_start} - {shot.frame_end}</TableCell>
                                                 <TableCell onClick={(e) => e.stopPropagation()}>
-                                                    {(isAdmin || isSupervisor) ? (
+                                                    {canManageShots ? (
                                                         <Select
                                                             value={shot.assigned_to || 'unassigned'}
                                                             onValueChange={(value) => handleAssignShot(shot.id, value === 'unassigned' ? null : value)}
@@ -473,7 +475,7 @@ export default function ProjectDetailPage() {
                                                     {shot.deadline ? format(new Date(shot.deadline), 'MMM d, yyyy') : '-'}
                                                 </TableCell>
                                                 <TableCell onClick={(e) => e.stopPropagation()}>
-                                                    {(isAdmin || isSupervisor) ? (
+                                                    {canManageShots ? (
                                                         <Select
                                                             value={shot.status}
                                                             onValueChange={(value) => handleStatusChange(shot.id, value)}
@@ -492,7 +494,7 @@ export default function ProjectDetailPage() {
                                                     )}
                                                 </TableCell>
                                                 <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                                                    {(isAdmin || isSupervisor) && (
+                                                    {canManageShots && (
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
@@ -514,11 +516,11 @@ export default function ProjectDetailPage() {
                 </TabsContent>
 
                 {/* Team Tab */}
-                {(isAdmin || isSupervisor) && (
+                {(canManageProjects || isSupervisor) && (
                     <TabsContent value="team" className="space-y-4">
                         <div className="flex justify-between items-center">
                             <h2 className="text-xl font-semibold text-zinc-100">Team Members</h2>
-                            {isAdmin && (
+                            {canManageProjects && (
                                 <Dialog open={addMemberOpen} onOpenChange={setAddMemberOpen}>
                                     <DialogTrigger asChild>
                                         <Button className="bg-blue-600 hover:bg-blue-500" data-testid="add-member-button">
@@ -553,6 +555,7 @@ export default function ProjectDetailPage() {
                                                         <SelectValue />
                                                     </SelectTrigger>
                                                     <SelectContent className="bg-zinc-900 border-zinc-800">
+                                                        <SelectItem value="production_manager">Production Manager</SelectItem>
                                                         <SelectItem value="supervisor">Supervisor</SelectItem>
                                                         <SelectItem value="animator">Animator</SelectItem>
                                                     </SelectContent>
@@ -580,7 +583,7 @@ export default function ProjectDetailPage() {
                                             <TableHead className="text-zinc-400">Name</TableHead>
                                             <TableHead className="text-zinc-400">Email</TableHead>
                                             <TableHead className="text-zinc-400">Role</TableHead>
-                                            {isAdmin && <TableHead className="text-zinc-400 text-right">Actions</TableHead>}
+                                            {canManageProjects && <TableHead className="text-zinc-400 text-right">Actions</TableHead>}
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -595,7 +598,7 @@ export default function ProjectDetailPage() {
                                                     <TableCell>
                                                         <span className="capitalize text-zinc-300">{member.role}</span>
                                                     </TableCell>
-                                                    {isAdmin && (
+                                                    {canManageProjects && (
                                                         <TableCell className="text-right">
                                                             {member.role !== 'admin' && (
                                                                 <Button
@@ -621,7 +624,7 @@ export default function ProjectDetailPage() {
                 )}
 
                 {/* Activity Tab */}
-                {(isAdmin || isSupervisor) && (
+                {(canManageProjects || isSupervisor) && (
                     <TabsContent value="activity" className="space-y-4">
                         <h2 className="text-xl font-semibold text-zinc-100">Activity Log</h2>
                         <Card className="bg-zinc-900 border-zinc-800">

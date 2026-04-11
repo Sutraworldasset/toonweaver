@@ -22,7 +22,7 @@ import {
 import { format } from 'date-fns';
 
 export default function DashboardPage() {
-    const { user, isAdmin, isAnimator } = useAuth();
+    const { user, isAdmin, isProductionManager, isAnimator } = useAuth();
     const navigate = useNavigate();
     const [stats, setStats] = useState(null);
     const [assignedShots, setAssignedShots] = useState([]);
@@ -80,7 +80,7 @@ export default function DashboardPage() {
             color: 'text-purple-500',
             bgColor: 'bg-purple-500/10',
         },
-        ...(isAdmin
+        ...((isAdmin || isProductionManager)
             ? [
                   {
                       label: 'Total Users',

@@ -41,7 +41,8 @@ const statusOptions = [
 
 export default function ShotDetailPage() {
     const { projectId, shotId } = useParams();
-    const { user, isAdmin, isSupervisor, isAnimator } = useAuth();
+    const { user, isAdmin, isProductionManager, isSupervisor, isAnimator } = useAuth();
+    const canManageShots = isAdmin || isProductionManager || isSupervisor;
     const navigate = useNavigate();
 
     const [shot, setShot] = useState(null);
@@ -151,7 +152,7 @@ export default function ShotDetailPage() {
 
     if (!shot) return null;
 
-    const canChangeStatus = isAdmin || isSupervisor || (isAnimator && shot.assigned_to === user?.id);
+    const canChangeStatus = canManageShots || (isAnimator && shot.assigned_to === user?.id);
     const animatorStatusOptions = statusOptions.filter(s => ['in_progress', 'submitted'].includes(s.value));
 
     return (
@@ -232,7 +233,7 @@ export default function ShotDetailPage() {
                     <Card className="bg-zinc-900 border-zinc-800">
                         <CardHeader className="flex flex-row items-center justify-between">
                             <CardTitle className="text-zinc-100">File Links</CardTitle>
-                            {(isAdmin || isSupervisor || (isAnimator && shot.assigned_to === user?.id)) && (
+                            {(canManageShots || (isAnimator && shot.assigned_to === user?.id)) && (
                                 <Button
                                     variant="ghost"
                                     size="sm"

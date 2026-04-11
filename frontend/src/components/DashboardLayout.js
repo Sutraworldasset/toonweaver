@@ -32,7 +32,7 @@ const adminNavItems = [
 ];
 
 export default function DashboardLayout() {
-    const { user, logout, isAdmin, isSupervisor } = useAuth();
+    const { user, logout, isAdmin, isProductionManager, isSupervisor } = useAuth();
     const navigate = useNavigate();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [notifications, setNotifications] = useState([]);
@@ -59,7 +59,7 @@ export default function DashboardLayout() {
         navigate('/login');
     };
 
-    const allNavItems = isAdmin || isSupervisor
+    const allNavItems = isAdmin || isProductionManager || isSupervisor
         ? [...navItems, ...adminNavItems]
         : navItems;
 

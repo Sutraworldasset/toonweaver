@@ -30,7 +30,8 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 
 export default function ProjectsPage() {
-    const { isAdmin } = useAuth();
+    const { isAdmin, isProductionManager } = useAuth();
+    const canManageProjects = isAdmin || isProductionManager;
     const navigate = useNavigate();
     const [projects, setProjects] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -104,7 +105,7 @@ export default function ProjectsPage() {
                     <h1 className="text-3xl font-bold text-zinc-50 font-['Chivo']">Projects</h1>
                     <p className="text-zinc-400 mt-1">Manage your animation projects</p>
                 </div>
-                {isAdmin && (
+                {canManageProjects && (
                     <Dialog open={createOpen} onOpenChange={setCreateOpen}>
                         <DialogTrigger asChild>
                             <Button
@@ -182,7 +183,7 @@ export default function ProjectsPage() {
                         <FolderKanban className="w-16 h-16 mx-auto mb-4 text-zinc-600" />
                         <h3 className="text-lg font-medium text-zinc-300 mb-2">No projects yet</h3>
                         <p className="text-zinc-500 mb-4">
-                            {isAdmin ? 'Create your first project to get started' : 'You have not been assigned to any projects'}
+                        {canManageProjects ? 'Create your first project to get started' : 'You have not been assigned to any projects'}
                         </p>
                     </CardContent>
                 </Card>
@@ -211,7 +212,7 @@ export default function ProjectsPage() {
                                                 {project.description || 'No description'}
                                             </p>
                                         </div>
-                                        {isAdmin && (
+                                        {canManageProjects && (
                                             <AlertDialog>
                                                 <AlertDialogTrigger asChild>
                                                     <Button
