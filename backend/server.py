@@ -21,15 +21,15 @@ from enum import Enum
 import io
 
 # MongoDB connection
-mongo_url = os.environ['MONGO_URL']
+mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+db = client[os.environ.get('DB_NAME', 'toonweaver')]
 
 # JWT Configuration
 JWT_ALGORITHM = "HS256"
 
 def get_jwt_secret() -> str:
-    return os.environ["JWT_SECRET"]
+    return os.environ.get("JWT_SECRET", "default-secret-change-in-production")
 
 # Create the main app
 app = FastAPI(title="Toonweaver API")
@@ -898,25 +898,7 @@ async def startup_event():
         )
         logger.info(f"Admin password updated")
     
-    # Write test credentials
-    import os as os_module
-    os_module.makedirs("/app/memory", exist_ok=True)
-    with open("/app/memory/test_credentials.md", "w") as f:
-        f.write(f"""# Toonweaver Test Credentials
-
-## Admin Account
-- Email: {admin_email}
-- Password: {admin_password}
-- Role: admin
-
-## Auth Endpoints
-- POST /api/auth/register
-- POST /api/auth/login
-- POST /api/auth/logout
-- GET /api/auth/me
-- POST /api/auth/refresh
-""")
-    logger.info("Test credentials written to /app/memory/test_credentials.md")
+    logger.info("Startup complete")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
