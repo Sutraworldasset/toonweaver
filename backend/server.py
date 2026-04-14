@@ -876,27 +876,31 @@ async def startup_event():
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     await db.activity_logs.create_index([("project_id", 1), ("timestamp", -1)])
     
-    # Seed admin
-    admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com")
-    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
-    existing = await db.users.find_one({"email": admin_email})
+    # Seed client user
+    client_email = os.environ.get("ADMIN_EMAIL", "client@toonweaver.com")
+    client_password = os.environ.get("ADMIN_PASSWORD", "Client123!")
+    existing = await db.users.find_one({"email": client_email})
     
     if existing is None:
-        hashed = hash_password(admin_password)
+        hashed = hash_password(client_password)
         await db.users.insert_one({
-            "email": admin_email,
+            "email": client_email,
             "password_hash": hashed,
-            "name": "Admin",
+            "name": "Client",
             "role": "client",
             "created_at": datetime.now(timezone.utc)
         })
-        logger.info(f"Admin user created: {admin_email}")
-    elif not verify_password(admin_password, existing["password_hash"]):
+        logger.info(f"Client user created: {client_email}")
+    else:
+        # Update password and role if needed
         await db.users.update_one(
-            {"email": admin_email},
-            {"$set": {"password_hash": hash_password(admin_password)}}
+            {"email": client_email},
+            {"$set": {
+                "password_hash": hash_password(client_password),
+                "role": "client"
+            }}
         )
-        logger.info(f"Admin password updated")
+        logger.info(f"Client user updated: {client_email}")
     
     logger.info("Startup complete")
 
