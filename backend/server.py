@@ -851,11 +851,8 @@ async def health_check():
 app.include_router(api_router)
 
 # CORS Configuration
-cors_origins = os.environ.get("CORS_ORIGINS", "*")
-if cors_origins == "*":
-    allow_origins_list = ["*"]
-else:
-    allow_origins_list = [origin.strip() for origin in cors_origins.split(",")]
+cors_origins = os.environ.get("CORS_ORIGINS", "https://toonweaver.vercel.app")
+allow_origins_list = [origin.strip() for origin in cors_origins.split(",")]
 
 app.add_middleware(
     CORSMiddleware,
