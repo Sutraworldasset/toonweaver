@@ -46,10 +46,10 @@ logger = logging.getLogger(__name__)
 
 # ============== ENUMS ==============
 class UserRole(str, Enum):
-    ADMIN = "admin"
+    CLIENT = "client"
     PRODUCTION_MANAGER = "production_manager"
     SUPERVISOR = "supervisor"
-    ANIMATOR = "animator"
+    ARTIST = "artist"
 
 class ShotStatus(str, Enum):
     NOT_STARTED = "not_started"
@@ -63,7 +63,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     name: str
-    role: UserRole = UserRole.ANIMATOR
+    role: UserRole = UserRole.ARTIST
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -313,7 +313,7 @@ async def refresh_token(request: Request, response: Response):
 # ============== USERS ROUTES ==============
 @api_router.get("/users")
 async def get_users(user: dict = Depends(get_current_user)):
-    if user["role"] not in ["admin", "production_manager", "supervisor"]:
+    if user["role"] not in ["client", "production_manager", "supervisor"]:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     
     users = await db.users.find({}, {"password_hash": 0}).to_list(1000)
@@ -328,7 +328,7 @@ async def get_user(user_id: str, user: dict = Depends(get_current_user)):
 
 @api_router.put("/users/{user_id}/role")
 async def update_user_role(user_id: str, role: UserRole, user: dict = Depends(get_current_user)):
-    if user["role"] not in ["admin", "production_manager"]:
+    if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only admin or production manager can change roles")
     
     result = await db.users.update_one(
@@ -342,7 +342,7 @@ async def update_user_role(user_id: str, role: UserRole, user: dict = Depends(ge
 # ============== PROJECTS ROUTES ==============
 @api_router.post("/projects")
 async def create_project(project: ProjectCreate, user: dict = Depends(get_current_user)):
-    if user["role"] not in ["admin", "production_manager"]:
+    if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only admin or production manager can create projects")
     
     project_doc = {
@@ -363,7 +363,7 @@ async def create_project(project: ProjectCreate, user: dict = Depends(get_curren
 
 @api_router.get("/projects")
 async def get_projects(user: dict = Depends(get_current_user)):
-    if user["role"] in ["admin", "production_manager"]:
+    if user["role"] in ["client", "production_manager"]:
         projects = await db.projects.find({}).to_list(1000)
     else:
         projects = await db.projects.find({"team_members.user_id": user["id"]}).to_list(1000)
@@ -377,7 +377,7 @@ async def get_project(project_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Project not found")
     
     # Check access
-    if user["role"] not in ["admin", "production_manager"]:
+    if user["role"] not in ["client", "production_manager"]:
         member_ids = [m["user_id"] for m in project.get("team_members", [])]
         if user["id"] not in member_ids:
             raise HTTPException(status_code=403, detail="No access to this project")
@@ -386,7 +386,7 @@ async def get_project(project_id: str, user: dict = Depends(get_current_user)):
 
 @api_router.put("/projects/{project_id}")
 async def update_project(project_id: str, update: ProjectUpdate, user: dict = Depends(get_current_user)):
-    if user["role"] not in ["admin", "production_manager"]:
+    if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only admin or production manager can update projects")
     
     update_data = {}
@@ -412,7 +412,7 @@ async def update_project(project_id: str, update: ProjectUpdate, user: dict = De
 
 @api_router.delete("/projects/{project_id}")
 async def delete_project(project_id: str, user: dict = Depends(get_current_user)):
-    if user["role"] not in ["admin", "production_manager"]:
+    if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only admin or production manager can delete projects")
     
     result = await db.projects.delete_one({"_id": ObjectId(project_id)})
@@ -427,7 +427,7 @@ async def delete_project(project_id: str, user: dict = Depends(get_current_user)
 
 @api_router.post("/projects/{project_id}/team")
 async def add_team_member(project_id: str, member: TeamMemberAdd, user: dict = Depends(get_current_user)):
-    if user["role"] not in ["admin", "production_manager"]:
+    if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only admin or production manager can manage team")
     
     # Check if user exists
@@ -448,7 +448,7 @@ async def add_team_member(project_id: str, member: TeamMemberAdd, user: dict = D
 
 @api_router.delete("/projects/{project_id}/team/{member_id}")
 async def remove_team_member(project_id: str, member_id: str, user: dict = Depends(get_current_user)):
-    if user["role"] not in ["admin", "production_manager"]:
+    if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only admin or production manager can manage team")
     
     await db.projects.update_one(
@@ -462,7 +462,7 @@ async def remove_team_member(project_id: str, member_id: str, user: dict = Depen
 # ============== SHOTS ROUTES ==============
 @api_router.post("/projects/{project_id}/shots")
 async def create_shot(project_id: str, shot: ShotCreate, user: dict = Depends(get_current_user)):
-    if user["role"] not in ["admin", "production_manager", "supervisor"]:
+    if user["role"] not in ["client", "production_manager", "supervisor"]:
         raise HTTPException(status_code=403, detail="Only admin, production manager or supervisor can create shots")
     
     # Check project exists
@@ -496,7 +496,7 @@ async def get_shots(project_id: str, status: Optional[str] = None, user: dict = 
     query = {"project_id": project_id}
     
     # Animators only see their assigned shots
-    if user["role"] == "animator":
+    if user["role"] == "artist":
         query["assigned_to"] = user["id"]
     
     if status:
@@ -566,7 +566,7 @@ async def update_shot(project_id: str, shot_id: str, update: ShotUpdate, user: d
         raise HTTPException(status_code=404, detail="Shot not found")
     
     # Animators can only change status to submitted or in_progress
-    if user["role"] == "animator":
+    if user["role"] == "artist":
         if shot.get("assigned_to") != user["id"]:
             raise HTTPException(status_code=403, detail="Not assigned to this shot")
         if update.status and update.status.value not in ["in_progress", "submitted"]:
@@ -617,7 +617,7 @@ async def update_shot(project_id: str, shot_id: str, update: ShotUpdate, user: d
 
 @api_router.delete("/projects/{project_id}/shots/{shot_id}")
 async def delete_shot(project_id: str, shot_id: str, user: dict = Depends(get_current_user)):
-    if user["role"] not in ["admin", "production_manager", "supervisor"]:
+    if user["role"] not in ["client", "production_manager", "supervisor"]:
         raise HTTPException(status_code=403, detail="Only admin, production manager or supervisor can delete shots")
     
     result = await db.shots.delete_one({"_id": ObjectId(shot_id), "project_id": project_id})
@@ -637,7 +637,7 @@ async def add_file_link(project_id: str, shot_id: str, file: FileLink, user: dic
         raise HTTPException(status_code=404, detail="Shot not found")
     
     # Check permission
-    if user["role"] == "animator" and shot.get("assigned_to") != user["id"]:
+    if user["role"] == "artist" and shot.get("assigned_to") != user["id"]:
         raise HTTPException(status_code=403, detail="Not assigned to this shot")
     
     file_entry = {
@@ -680,7 +680,7 @@ async def create_feedback(project_id: str, shot_id: str, feedback: FeedbackCreat
     result = await db.feedback.insert_one(feedback_doc)
     
     # Notify assigned animator if feedback is from supervisor
-    if user["role"] in ["admin", "supervisor"] and shot.get("assigned_to"):
+    if user["role"] in ["client", "supervisor"] and shot.get("assigned_to"):
         await create_notification(
             shot["assigned_to"],
             "New Feedback",
@@ -811,13 +811,13 @@ pause
 # ============== STATS ROUTES ==============
 @api_router.get("/stats/dashboard")
 async def get_dashboard_stats(user: dict = Depends(get_current_user)):
-    if user["role"] in ["admin", "production_manager"]:
+    if user["role"] in ["client", "production_manager"]:
         total_projects = await db.projects.count_documents({})
         total_shots = await db.shots.count_documents({})
         total_users = await db.users.count_documents({})
     else:
         total_projects = await db.projects.count_documents({"team_members.user_id": user["id"]})
-        if user["role"] == "animator":
+        if user["role"] == "artist":
             total_shots = await db.shots.count_documents({"assigned_to": user["id"]})
         else:
             project_ids = [str(p["_id"]) for p in await db.projects.find({"team_members.user_id": user["id"]}, {"_id": 1}).to_list(1000)]
@@ -827,9 +827,9 @@ async def get_dashboard_stats(user: dict = Depends(get_current_user)):
     # Shot status counts
     status_counts = {}
     for status in ShotStatus:
-        if user["role"] == "animator":
+        if user["role"] == "artist":
             count = await db.shots.count_documents({"assigned_to": user["id"], "status": status.value})
-        elif user["role"] in ["admin", "production_manager"]:
+        elif user["role"] in ["client", "production_manager"]:
             count = await db.shots.count_documents({"status": status.value})
         else:
             count = await db.shots.count_documents({"status": status.value})
@@ -887,7 +887,7 @@ async def startup_event():
             "email": admin_email,
             "password_hash": hashed,
             "name": "Admin",
-            "role": "admin",
+            "role": "client",
             "created_at": datetime.now(timezone.utc)
         })
         logger.info(f"Admin user created: {admin_email}")

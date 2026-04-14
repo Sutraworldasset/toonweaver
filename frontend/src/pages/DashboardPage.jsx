@@ -22,7 +22,7 @@ import {
 import { format } from 'date-fns';
 
 export default function DashboardPage() {
-    const { user, isAdmin, isProductionManager, isAnimator } = useAuth();
+    const { user, isClient, isProductionManager, isArtist } = useAuth();
     const navigate = useNavigate();
     const [stats, setStats] = useState(null);
     const [assignedShots, setAssignedShots] = useState([]);
@@ -42,7 +42,7 @@ export default function DashboardPage() {
             setStats(statsRes.data);
             setProjects(projectsRes.data);
 
-            if (isAnimator) {
+            if (isArtist) {
                 const shotsRes = await getAssignedShots();
                 setAssignedShots(shotsRes.data);
             }
@@ -80,7 +80,7 @@ export default function DashboardPage() {
             color: 'text-purple-500',
             bgColor: 'bg-purple-500/10',
         },
-        ...((isAdmin || isProductionManager)
+        ...((isClient || isProductionManager)
             ? [
                   {
                       label: 'Total Users',
@@ -138,8 +138,8 @@ export default function DashboardPage() {
                 </p>
             </div>
 
-            {/* Drive Mapper Card for Animators */}
-            {isAnimator && projects.length > 0 && (
+            {/* Drive Mapper Card for Artists */}
+            {isArtist && projects.length > 0 && (
                 <Card className="terminal-card bg-zinc-900 border-zinc-800" data-testid="drive-mapper-card">
                     <CardContent className="p-6">
                         <div className="flex items-start justify-between">
@@ -213,8 +213,8 @@ export default function DashboardPage() {
                 </CardContent>
             </Card>
 
-            {/* Assigned Shots for Animators */}
-            {isAnimator && assignedShots.length > 0 && (
+            {/* Assigned Shots for Artists */}
+            {isArtist && assignedShots.length > 0 && (
                 <Card className="bg-zinc-900 border-zinc-800">
                     <CardHeader className="flex flex-row items-center justify-between">
                         <CardTitle className="text-zinc-100">My Assigned Shots</CardTitle>

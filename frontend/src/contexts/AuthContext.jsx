@@ -87,12 +87,12 @@ export function AuthProvider({ children }) {
         logout,
         checkAuth,
         isAuthenticated: !!user,
-        isAdmin: user?.role === 'admin',
+        isClient: user?.role === 'client',
         isProductionManager: user?.role === 'production_manager',
         isSupervisor: user?.role === 'supervisor',
-        isAnimator: user?.role === 'animator',
-        canManageProjects: ['admin', 'production_manager'].includes(user?.role),
-        canManageShots: ['admin', 'production_manager', 'supervisor'].includes(user?.role),
+        isArtist: user?.role === 'artist',
+        canManageProjects: ['client', 'production_manager'].includes(user?.role),
+        canManageShots: ['client', 'production_manager', 'supervisor'].includes(user?.role),
     };
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

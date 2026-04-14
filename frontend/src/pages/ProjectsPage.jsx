@@ -47,8 +47,8 @@ const linkTypes = [
 const defaultThumbnail = "https://static.prod-images.emergentagent.com/jobs/cdb8553e-ccf0-471d-81ed-c93aeed5709b/images/06194f8a88f4c513f25bb55bb5f386baab8913a911355e65e70de5297ee0ce0a.png";
 
 export default function ProjectsPage() {
-    const { isAdmin, isProductionManager } = useAuth();
-    const canManageProjects = isAdmin || isProductionManager;
+    const { isClient, isProductionManager } = useAuth();
+    const canManageProjects = isClient || isProductionManager;
     const navigate = useNavigate();
     const [projects, setProjects] = useState([]);
     const [loading, setLoading] = useState(true);

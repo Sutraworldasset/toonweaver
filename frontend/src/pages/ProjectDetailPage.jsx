@@ -73,9 +73,9 @@ const statusOptions = [
 
 export default function ProjectDetailPage() {
     const { projectId } = useParams();
-    const { isAdmin, isProductionManager, isSupervisor, user } = useAuth();
-    const canManageProjects = isAdmin || isProductionManager;
-    const canManageShots = isAdmin || isProductionManager || isSupervisor;
+    const { isClient, isProductionManager, isSupervisor, user } = useAuth();
+    const canManageProjects = isClient || isProductionManager;
+    const canManageShots = isClient || isProductionManager || isSupervisor;
     const navigate = useNavigate();
     
     const [project, setProject] = useState(null);
@@ -223,7 +223,7 @@ export default function ProjectDetailPage() {
         return matchesSearch && matchesStatus;
     });
 
-    const teamAnimators = allUsers.filter(u => 
+    const teamArtists = allUsers.filter(u => 
         project?.team_members?.some(m => m.user_id === u.id && m.role === 'animator')
     );
 
@@ -475,7 +475,7 @@ export default function ProjectDetailPage() {
                                                             </SelectTrigger>
                                                             <SelectContent className="bg-zinc-900 border-zinc-800">
                                                                 <SelectItem value="unassigned">Unassigned</SelectItem>
-                                                                {teamAnimators.map((u) => (
+                                                                {teamArtists.map((u) => (
                                                                     <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
                                                                 ))}
                                                             </SelectContent>
@@ -570,7 +570,7 @@ export default function ProjectDetailPage() {
                                                     <SelectContent className="bg-zinc-900 border-zinc-800">
                                                         <SelectItem value="production_manager">Production Manager</SelectItem>
                                                         <SelectItem value="supervisor">Supervisor</SelectItem>
-                                                        <SelectItem value="animator">Animator</SelectItem>
+                                                        <SelectItem value="artist">Artist</SelectItem>
                                                     </SelectContent>
                                                 </Select>
                                             </div>

@@ -41,8 +41,8 @@ const statusOptions = [
 
 export default function ShotDetailPage() {
     const { projectId, shotId } = useParams();
-    const { user, isAdmin, isProductionManager, isSupervisor, isAnimator } = useAuth();
-    const canManageShots = isAdmin || isProductionManager || isSupervisor;
+    const { user, isClient, isProductionManager, isSupervisor, isArtist } = useAuth();
+    const canManageShots = isClient || isProductionManager || isSupervisor;
     const navigate = useNavigate();
 
     const [shot, setShot] = useState(null);
@@ -152,7 +152,7 @@ export default function ShotDetailPage() {
 
     if (!shot) return null;
 
-    const canChangeStatus = canManageShots || (isAnimator && shot.assigned_to === user?.id);
+    const canChangeStatus = canManageShots || (isArtist && shot.assigned_to === user?.id);
     const animatorStatusOptions = statusOptions.filter(s => ['in_progress', 'submitted'].includes(s.value));
 
     return (
@@ -178,7 +178,7 @@ export default function ShotDetailPage() {
                             <StatusBadge status={shot.status} />
                         </SelectTrigger>
                         <SelectContent className="bg-zinc-900 border-zinc-800">
-                            {(isAnimator ? animatorStatusOptions : statusOptions).map((opt) => (
+                            {(isArtist ? animatorStatusOptions : statusOptions).map((opt) => (
                                 <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                             ))}
                         </SelectContent>
@@ -233,7 +233,7 @@ export default function ShotDetailPage() {
                     <Card className="bg-zinc-900 border-zinc-800">
                         <CardHeader className="flex flex-row items-center justify-between">
                             <CardTitle className="text-zinc-100">File Links</CardTitle>
-                            {(canManageShots || (isAnimator && shot.assigned_to === user?.id)) && (
+                            {(canManageShots || (isArtist && shot.assigned_to === user?.id)) && (
                                 <Button
                                     variant="ghost"
                                     size="sm"

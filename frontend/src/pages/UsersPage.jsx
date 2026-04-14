@@ -24,15 +24,15 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 
 const roleConfig = {
-    admin: { label: 'Admin', icon: Shield, color: 'text-red-400' },
+    client: { label: 'Client', icon: Shield, color: 'text-emerald-400' },
     production_manager: { label: 'Production Manager', icon: UserCog, color: 'text-purple-400' },
     supervisor: { label: 'Supervisor', icon: UserCog, color: 'text-amber-400' },
-    animator: { label: 'Animator', icon: User, color: 'text-blue-400' },
+    artist: { label: 'Artist', icon: User, color: 'text-blue-400' },
 };
 
 export default function UsersPage() {
-    const { isAdmin, isProductionManager } = useAuth();
-    const canManageRoles = isAdmin || isProductionManager;
+    const { isClient, isProductionManager } = useAuth();
+    const canManageRoles = isClient || isProductionManager;
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -68,10 +68,10 @@ export default function UsersPage() {
     );
 
     const roleStats = {
-        admin: users.filter(u => u.role === 'admin').length,
+        client: users.filter(u => u.role === 'client').length,
         production_manager: users.filter(u => u.role === 'production_manager').length,
         supervisor: users.filter(u => u.role === 'supervisor').length,
-        animator: users.filter(u => u.role === 'animator').length,
+        artist: users.filter(u => u.role === 'artist').length,
     };
 
     if (loading) {
@@ -143,7 +143,7 @@ export default function UsersPage() {
                             </TableHeader>
                             <TableBody>
                                 {filteredUsers.map((user) => {
-                                    const config = roleConfig[user.role] || roleConfig.animator;
+                                    const config = roleConfig[user.role] || roleConfig.artist;
                                     return (
                                         <TableRow key={user.id} className="border-zinc-800" data-testid={`user-row-${user.id}`}>
                                             <TableCell>
@@ -168,10 +168,10 @@ export default function UsersPage() {
                                                             </div>
                                                         </SelectTrigger>
                                                         <SelectContent className="bg-zinc-900 border-zinc-800">
-                                                            <SelectItem value="admin">Admin</SelectItem>
+                                                            <SelectItem value="client">Client</SelectItem>
                                                             <SelectItem value="production_manager">Production Manager</SelectItem>
                                                             <SelectItem value="supervisor">Supervisor</SelectItem>
-                                                            <SelectItem value="animator">Animator</SelectItem>
+                                                            <SelectItem value="artist">Artist</SelectItem>
                                                         </SelectContent>
                                                     </Select>
                                                 ) : (
