@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-
+const API = 'https://toonweaver-production.up.railway.app/api';
 const API = `${import.meta.env.VITE_BACKEND_URL || 'https://toonweaver-production.up.railway.app'}/api`;
 const AuthContext = createContext(null);
 
