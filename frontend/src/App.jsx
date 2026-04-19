@@ -73,7 +73,7 @@ function AppRoutes() {
                 <Route path="dashboard" element={<DashboardPage />} />
                 <Route path="projects" element={<ProjectsPage />} />
                 <Route path="projects/:projectId" element={<ProjectDetailPage />} />
-                <Route path="projects/:projectId/shots/:shotId" element={<ShotDetailPage />} />
+                <Route path="projects/:projectId/episodes/:episodeId/shots/:shotId" element={<ShotDetailPage />} />
                 <Route path="users" element={<UsersPage />} />
                 <Route path="notifications" element={<NotificationsPage />} />
             </Route>
