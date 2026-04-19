@@ -23,7 +23,7 @@ function formatApiErrorDetail(detail) {
 }
 
 export function AuthProvider({ children }) {
-    const [user, setUser] = useState(null); // null = checking, false = not auth, object = auth
+    const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
     const checkAuth = useCallback(async () => {
@@ -41,31 +41,38 @@ export function AuthProvider({ children }) {
         checkAuth();
     }, [checkAuth]);
 
-    const login = async (email, password) => {
+    // Login now requires role to be passed and verified by backend
+    const login = async (email, password, role) => {
         try {
             const { data } = await axios.post(
                 `${API}/auth/login`,
-                { email, password },
+                { email, password, role },
                 { withCredentials: true }
             );
             setUser(data);
             return { success: true };
         } catch (e) {
-            return { success: false, error: formatApiErrorDetail(e.response?.data?.detail) || e.message };
+            return {
+                success: false,
+                error: formatApiErrorDetail(e.response?.data?.detail) || e.message
+            };
         }
     };
 
-    const register = async (email, password, name, role = 'animator') => {
+    // Register — only called by authenticated users (client/PM/supervisor)
+    const register = async (email, password, name, role) => {
         try {
             const { data } = await axios.post(
                 `${API}/auth/register`,
                 { email, password, name, role },
                 { withCredentials: true }
             );
-            setUser(data);
-            return { success: true };
+            return { success: true, data };
         } catch (e) {
-            return { success: false, error: formatApiErrorDetail(e.response?.data?.detail) || e.message };
+            return {
+                success: false,
+                error: formatApiErrorDetail(e.response?.data?.detail) || e.message
+            };
         }
     };
 
@@ -92,7 +99,11 @@ export function AuthProvider({ children }) {
         isSupervisor: user?.role === 'supervisor',
         isArtist: user?.role === 'artist',
         canManageProjects: ['client', 'production_manager'].includes(user?.role),
-        canManageShots: ['client', 'production_manager', 'supervisor'].includes(user?.role),
+        canManageEpisodes: ['client', 'production_manager'].includes(user?.role),
+        canManageShots: ['client', 'production_manager'].includes(user?.role),
+        canAssignShots: ['client', 'production_manager', 'supervisor'].includes(user?.role),
+        canReview: ['client', 'supervisor'].includes(user?.role),
+        canManageUsers: ['client', 'production_manager', 'supervisor'].includes(user?.role),
     };
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
