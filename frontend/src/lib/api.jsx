@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API = `${import.meta.env.VITE_BACKEND_URL}/api`;
+const API = `${import.meta.env.VITE_BACKEND_URL || 'https://toonweaver-production.up.railway.app'}/api`;
 
 const api = axios.create({
     baseURL: API,
