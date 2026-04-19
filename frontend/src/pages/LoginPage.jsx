@@ -6,41 +6,33 @@ import { Label } from '../components/ui/label';
 import { Film, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 
+const ROLES = [
+    { value: 'client', label: 'Client', description: 'Full access & admin' },
+    { value: 'production_manager', label: 'Production Manager', description: 'Manage episodes & shots' },
+    { value: 'supervisor', label: 'Supervisor', description: 'Review & give feedback' },
+    { value: 'artist', label: 'Artist', description: 'Work on assigned shots' },
+];
+
 export default function LoginPage() {
-    const { login, register } = useAuth();
-    const [isLogin, setIsLogin] = useState(true);
+    const { login } = useAuth();
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
-    const [formData, setFormData] = useState({
-        email: '',
-        password: '',
-        name: '',
-    });
+    const [selectedRole, setSelectedRole] = useState('');
+    const [formData, setFormData] = useState({ email: '', password: '' });
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (!selectedRole) {
+            toast.error('Please select your role first');
+            return;
+        }
         setLoading(true);
-
         try {
-            if (isLogin) {
-                const result = await login(formData.email, formData.password);
-                if (!result.success) {
-                    toast.error(result.error);
-                } else {
-                    toast.success('Welcome back!');
-                }
+            const result = await login(formData.email, formData.password, selectedRole);
+            if (!result.success) {
+                toast.error(result.error);
             } else {
-                if (!formData.name.trim()) {
-                    toast.error('Please enter your name');
-                    setLoading(false);
-                    return;
-                }
-                const result = await register(formData.email, formData.password, formData.name);
-                if (!result.success) {
-                    toast.error(result.error);
-                } else {
-                    toast.success('Account created successfully!');
-                }
+                toast.success('Welcome back!');
             }
         } finally {
             setLoading(false);
@@ -62,28 +54,33 @@ export default function LoginPage() {
                                 Toonweaver
                             </h1>
                         </div>
-                        <p className="text-zinc-400 text-sm">
-                            {isLogin ? 'Sign in to your account' : 'Create your account'}
-                        </p>
+                        <p className="text-zinc-400 text-sm">Sign in to your animation pipeline</p>
+                    </div>
+
+                    {/* Role Selector */}
+                    <div className="space-y-2">
+                        <Label className="text-zinc-300">Select Your Role</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {ROLES.map((role) => (
+                                <button
+                                    key={role.value}
+                                    type="button"
+                                    onClick={() => setSelectedRole(role.value)}
+                                    className={`p-3 rounded-lg border text-left transition-all ${
+                                        selectedRole === role.value
+                                            ? 'border-blue-500 bg-blue-500/10 text-blue-400'
+                                            : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-600'
+                                    }`}
+                                >
+                                    <div className="text-xs font-semibold">{role.label}</div>
+                                    <div className="text-xs opacity-60 mt-0.5">{role.description}</div>
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
                     {/* Form */}
                     <form onSubmit={handleSubmit} className="space-y-5">
-                        {!isLogin && (
-                            <div className="space-y-2">
-                                <Label htmlFor="name" className="text-zinc-300">Name</Label>
-                                <Input
-                                    id="name"
-                                    type="text"
-                                    placeholder="Your name"
-                                    value={formData.name}
-                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                    className="bg-zinc-900 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-blue-500"
-                                    data-testid="register-name-input"
-                                />
-                            </div>
-                        )}
-
                         <div className="space-y-2">
                             <Label htmlFor="email" className="text-zinc-300">Email</Label>
                             <Input
@@ -94,7 +91,6 @@ export default function LoginPage() {
                                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                 className="bg-zinc-900 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-blue-500"
                                 required
-                                data-testid="login-email-input"
                             />
                         </div>
 
@@ -109,7 +105,6 @@ export default function LoginPage() {
                                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                                     className="bg-zinc-900 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-blue-500 pr-10"
                                     required
-                                    data-testid="login-password-input"
                                 />
                                 <button
                                     type="button"
@@ -124,31 +119,18 @@ export default function LoginPage() {
                         <Button
                             type="submit"
                             className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium"
-                            disabled={loading}
-                            data-testid="login-submit-button"
+                            disabled={loading || !selectedRole}
                         >
                             {loading ? (
                                 <span className="flex items-center gap-2">
                                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                    {isLogin ? 'Signing in...' : 'Creating account...'}
+                                    Signing in...
                                 </span>
                             ) : (
-                                isLogin ? 'Sign in' : 'Create account'
+                                `Sign in as ${ROLES.find(r => r.value === selectedRole)?.label || '...'}`
                             )}
                         </Button>
                     </form>
-
-                    {/* Toggle */}
-                    <div className="text-center">
-                        <button
-                            type="button"
-                            onClick={() => setIsLogin(!isLogin)}
-                            className="text-sm text-zinc-400 hover:text-blue-400 transition-colors"
-                            data-testid="toggle-auth-mode"
-                        >
-                            {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
-                        </button>
-                    </div>
                 </div>
             </div>
 
