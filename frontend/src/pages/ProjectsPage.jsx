@@ -32,7 +32,7 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from '../components/ui/alert-dialog';
-import { FolderKanban, Plus, Trash2, Users, Calendar, Link as LinkIcon, Image, X } from 'lucide-react';
+import { FolderKanban, Plus, Trash2, Users, Calendar, Link as LinkIcon, Image, X, Film } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
@@ -58,6 +58,7 @@ export default function ProjectsPage() {
         name: '',
         description: '',
         thumbnail_url: '',
+        fps: 25,
         drive_links: [],
     });
     const [newLink, setNewLink] = useState({ name: '', url: '', link_type: 'google_drive' });
@@ -69,7 +70,7 @@ export default function ProjectsPage() {
     const loadProjects = async () => {
         try {
             const { data } = await getProjects();
-            setProjects(data);
+            setProjects(Array.isArray(data) ? data : []);
         } catch (error) {
             toast.error('Failed to load projects');
         } finally {
@@ -82,18 +83,12 @@ export default function ProjectsPage() {
             toast.error('Please enter link name and URL');
             return;
         }
-        setFormData({
-            ...formData,
-            drive_links: [...formData.drive_links, { ...newLink }]
-        });
+        setFormData({ ...formData, drive_links: [...formData.drive_links, { ...newLink }] });
         setNewLink({ name: '', url: '', link_type: 'google_drive' });
     };
 
     const handleRemoveLink = (index) => {
-        setFormData({
-            ...formData,
-            drive_links: formData.drive_links.filter((_, i) => i !== index)
-        });
+        setFormData({ ...formData, drive_links: formData.drive_links.filter((_, i) => i !== index) });
     };
 
     const handleCreate = async (e) => {
@@ -102,13 +97,12 @@ export default function ProjectsPage() {
             toast.error('Please enter a project name');
             return;
         }
-
         setCreating(true);
         try {
-            await createProject(formData);
+            await createProject({ ...formData, fps: parseInt(formData.fps) });
             toast.success('Project created successfully');
             setCreateOpen(false);
-            setFormData({ name: '', description: '', thumbnail_url: '', drive_links: [] });
+            setFormData({ name: '', description: '', thumbnail_url: '', fps: 25, drive_links: [] });
             loadProjects();
         } catch (error) {
             toast.error('Failed to create project');
@@ -146,10 +140,7 @@ export default function ProjectsPage() {
                 {canManageProjects && (
                     <Dialog open={createOpen} onOpenChange={setCreateOpen}>
                         <DialogTrigger asChild>
-                            <Button
-                                className="bg-blue-600 hover:bg-blue-500 text-white"
-                                data-testid="create-project-button"
-                            >
+                            <Button className="bg-blue-600 hover:bg-blue-500 text-white">
                                 <Plus className="w-4 h-4 mr-2" />
                                 New Project
                             </Button>
@@ -166,9 +157,9 @@ export default function ProjectsPage() {
                                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                         placeholder="Enter project name"
                                         className="bg-zinc-950 border-zinc-800 text-zinc-100"
-                                        data-testid="project-name-input"
                                     />
                                 </div>
+
                                 <div className="space-y-2">
                                     <Label className="text-zinc-300">Description</Label>
                                     <Textarea
@@ -177,28 +168,50 @@ export default function ProjectsPage() {
                                         placeholder="Enter project description"
                                         className="bg-zinc-950 border-zinc-800 text-zinc-100"
                                         rows={3}
-                                        data-testid="project-description-input"
                                     />
                                 </div>
-                                
-                                {/* Thumbnail URL */}
+
+                                {/* FPS Setting */}
+                                <div className="space-y-2">
+                                    <Label className="text-zinc-300 flex items-center gap-2">
+                                        <Film className="w-4 h-4" />
+                                        Frame Rate (FPS)
+                                    </Label>
+                                    <Select
+                                        value={String(formData.fps)}
+                                        onValueChange={(v) => setFormData({ ...formData, fps: parseInt(v) })}
+                                    >
+                                        <SelectTrigger className="bg-zinc-950 border-zinc-800 text-zinc-100">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-zinc-900 border-zinc-800">
+                                            <SelectItem value="24">24 fps (Cinema)</SelectItem>
+                                            <SelectItem value="25">25 fps (PAL / Europe)</SelectItem>
+                                            <SelectItem value="30">30 fps (NTSC / Web)</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <p className="text-xs text-zinc-500">
+                                        This setting is used to calculate shot durations. Cannot be changed after shots are created.
+                                    </p>
+                                </div>
+
+                                {/* Thumbnail */}
                                 <div className="space-y-2">
                                     <Label className="text-zinc-300 flex items-center gap-2">
                                         <Image className="w-4 h-4" />
-                                        Project Thumbnail URL
+                                        Thumbnail URL
                                     </Label>
                                     <Input
                                         value={formData.thumbnail_url}
                                         onChange={(e) => setFormData({ ...formData, thumbnail_url: e.target.value })}
                                         placeholder="https://example.com/image.jpg"
                                         className="bg-zinc-950 border-zinc-800 text-zinc-100"
-                                        data-testid="project-thumbnail-input"
                                     />
                                     {formData.thumbnail_url && (
                                         <div className="mt-2 rounded-lg overflow-hidden border border-zinc-800 h-32">
-                                            <img 
-                                                src={formData.thumbnail_url} 
-                                                alt="Preview" 
+                                            <img
+                                                src={formData.thumbnail_url}
+                                                alt="Preview"
                                                 className="w-full h-full object-cover"
                                                 onError={(e) => e.target.src = defaultThumbnail}
                                             />
@@ -212,8 +225,6 @@ export default function ProjectsPage() {
                                         <LinkIcon className="w-4 h-4" />
                                         Project Drive Links
                                     </Label>
-                                    
-                                    {/* Existing links */}
                                     {formData.drive_links.length > 0 && (
                                         <div className="space-y-2">
                                             {formData.drive_links.map((link, index) => (
@@ -225,35 +236,25 @@ export default function ProjectsPage() {
                                                     <span className="text-xs px-2 py-1 rounded bg-zinc-700 text-zinc-300 capitalize">
                                                         {link.link_type.replace('_', ' ')}
                                                     </span>
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="icon"
+                                                    <Button type="button" variant="ghost" size="icon"
                                                         onClick={() => handleRemoveLink(index)}
-                                                        className="text-zinc-500 hover:text-red-400 h-8 w-8"
-                                                    >
+                                                        className="text-zinc-500 hover:text-red-400 h-8 w-8">
                                                         <X className="w-4 h-4" />
                                                     </Button>
                                                 </div>
                                             ))}
                                         </div>
                                     )}
-
-                                    {/* Add new link */}
                                     <div className="p-3 rounded-lg bg-zinc-800/30 border border-zinc-700 space-y-3">
                                         <div className="grid grid-cols-2 gap-2">
                                             <Input
                                                 value={newLink.name}
                                                 onChange={(e) => setNewLink({ ...newLink, name: e.target.value })}
-                                                placeholder="Link name (e.g., Reference Images)"
+                                                placeholder="Link name"
                                                 className="bg-zinc-900 border-zinc-700 text-zinc-100 text-sm"
-                                                data-testid="link-name-input"
                                             />
-                                            <Select
-                                                value={newLink.link_type}
-                                                onValueChange={(v) => setNewLink({ ...newLink, link_type: v })}
-                                            >
-                                                <SelectTrigger className="bg-zinc-900 border-zinc-700" data-testid="link-type-select">
+                                            <Select value={newLink.link_type} onValueChange={(v) => setNewLink({ ...newLink, link_type: v })}>
+                                                <SelectTrigger className="bg-zinc-900 border-zinc-700">
                                                     <SelectValue />
                                                 </SelectTrigger>
                                                 <SelectContent className="bg-zinc-900 border-zinc-800">
@@ -269,15 +270,8 @@ export default function ProjectsPage() {
                                                 onChange={(e) => setNewLink({ ...newLink, url: e.target.value })}
                                                 placeholder="https://drive.google.com/..."
                                                 className="flex-1 bg-zinc-900 border-zinc-700 text-zinc-100 text-sm"
-                                                data-testid="link-url-input"
                                             />
-                                            <Button
-                                                type="button"
-                                                onClick={handleAddLink}
-                                                variant="secondary"
-                                                className="bg-zinc-700 hover:bg-zinc-600"
-                                                data-testid="add-link-button"
-                                            >
+                                            <Button type="button" onClick={handleAddLink} variant="secondary" className="bg-zinc-700 hover:bg-zinc-600">
                                                 <Plus className="w-4 h-4" />
                                             </Button>
                                         </div>
@@ -285,20 +279,10 @@ export default function ProjectsPage() {
                                 </div>
 
                                 <div className="flex justify-end gap-3 pt-4">
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        onClick={() => setCreateOpen(false)}
-                                        className="text-zinc-400"
-                                    >
+                                    <Button type="button" variant="ghost" onClick={() => setCreateOpen(false)} className="text-zinc-400">
                                         Cancel
                                     </Button>
-                                    <Button
-                                        type="submit"
-                                        disabled={creating}
-                                        className="bg-blue-600 hover:bg-blue-500"
-                                        data-testid="create-project-submit"
-                                    >
+                                    <Button type="submit" disabled={creating} className="bg-blue-600 hover:bg-blue-500">
                                         {creating ? 'Creating...' : 'Create Project'}
                                     </Button>
                                 </div>
@@ -324,9 +308,8 @@ export default function ProjectsPage() {
                     {projects.map((project) => (
                         <Card
                             key={project.id}
-                            className="bg-zinc-900 border-zinc-800 hover:bg-zinc-800/50 cursor-pointer transition-colors card-hover group"
+                            className="bg-zinc-900 border-zinc-800 hover:bg-zinc-800/50 cursor-pointer transition-colors group"
                             onClick={() => navigate(`/projects/${project.id}`)}
-                            data-testid={`project-card-${project.id}`}
                         >
                             <CardContent className="p-0">
                                 <div className="aspect-video bg-zinc-800 overflow-hidden">
@@ -348,13 +331,9 @@ export default function ProjectsPage() {
                                         {canManageProjects && (
                                             <AlertDialog>
                                                 <AlertDialogTrigger asChild>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
+                                                    <Button variant="ghost" size="icon"
                                                         className="text-zinc-500 hover:text-red-400 hover:bg-red-500/10 ml-2"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        data-testid={`delete-project-${project.id}`}
-                                                    >
+                                                        onClick={(e) => e.stopPropagation()}>
                                                         <Trash2 className="w-4 h-4" />
                                                     </Button>
                                                 </AlertDialogTrigger>
@@ -362,15 +341,12 @@ export default function ProjectsPage() {
                                                     <AlertDialogHeader>
                                                         <AlertDialogTitle className="text-zinc-100">Delete Project</AlertDialogTitle>
                                                         <AlertDialogDescription className="text-zinc-400">
-                                                            Are you sure you want to delete "{project.name}"? This will also delete all shots and feedback. This action cannot be undone.
+                                                            Are you sure you want to delete "{project.name}"? This will also delete all episodes, shots and feedback. This action cannot be undone.
                                                         </AlertDialogDescription>
                                                     </AlertDialogHeader>
                                                     <AlertDialogFooter>
                                                         <AlertDialogCancel className="bg-zinc-800 text-zinc-300 border-zinc-700">Cancel</AlertDialogCancel>
-                                                        <AlertDialogAction
-                                                            onClick={() => handleDelete(project.id)}
-                                                            className="bg-red-600 hover:bg-red-500"
-                                                        >
+                                                        <AlertDialogAction onClick={() => handleDelete(project.id)} className="bg-red-600 hover:bg-red-500">
                                                             Delete
                                                         </AlertDialogAction>
                                                     </AlertDialogFooter>
@@ -380,15 +356,13 @@ export default function ProjectsPage() {
                                     </div>
                                     <div className="flex items-center gap-4 mt-4 text-xs text-zinc-500">
                                         <div className="flex items-center gap-1">
+                                            <Film className="w-3 h-3" />
+                                            {project.fps || 25} fps
+                                        </div>
+                                        <div className="flex items-center gap-1">
                                             <Users className="w-3 h-3" />
                                             {project.team_members?.length || 0} members
                                         </div>
-                                        {project.drive_links?.length > 0 && (
-                                            <div className="flex items-center gap-1">
-                                                <LinkIcon className="w-3 h-3" />
-                                                {project.drive_links.length} links
-                                            </div>
-                                        )}
                                         <div className="flex items-center gap-1">
                                             <Calendar className="w-3 h-3" />
                                             {format(new Date(project.created_at), 'MMM d, yyyy')}
