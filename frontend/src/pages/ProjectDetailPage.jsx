@@ -403,6 +403,10 @@ export default function ProjectDetailPage() {
                     <Download className="w-4 h-4 mr-2" />
                     Download .bat
                 </Button>
+                <Button variant="outline" onClick={() => navigate(`/projects/${projectId}/sheets`)} className="border-zinc-700 text-zinc-300">
+    <FileSpreadsheet className="w-4 h-4 mr-2" />
+    Sheets
+</Button>
             </div>
 
             {/* Drive Links */}
