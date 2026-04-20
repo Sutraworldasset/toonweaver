@@ -7,6 +7,7 @@ import DashboardPage from "./pages/DashboardPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
 import ShotDetailPage from "./pages/ShotDetailPage";
+import SheetViewPage from "./pages/SheetViewPage";
 import UsersPage from "./pages/UsersPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import "@/App.css";
@@ -73,6 +74,7 @@ function AppRoutes() {
                 <Route path="dashboard" element={<DashboardPage />} />
                 <Route path="projects" element={<ProjectsPage />} />
                 <Route path="projects/:projectId" element={<ProjectDetailPage />} />
+                <Route path="projects/:projectId/sheets" element={<SheetViewPage />} />
                 <Route path="projects/:projectId/episodes/:episodeId/shots/:shotId" element={<ShotDetailPage />} />
                 <Route path="users" element={<UsersPage />} />
                 <Route path="notifications" element={<NotificationsPage />} />
