@@ -14,7 +14,7 @@ import logging
 import bcrypt
 import jwt
 from pydantic import BaseModel, EmailStr
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime, timezone, timedelta
 from enum import Enum
 import io
@@ -30,17 +30,10 @@ JWT_ALGORITHM = "HS256"
 def get_jwt_secret() -> str:
     return os.environ.get("JWT_SECRET", "default-secret-change-in-production")
 
-# Create the main app
 app = FastAPI(title="Toonweaver API")
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # ============== ENUMS ==============
@@ -51,23 +44,18 @@ class UserRole(str, Enum):
     ARTIST = "artist"
 
 class ShotStatus(str, Enum):
-    YTS = "yts"                          # Yet To Start
-    IN_PROGRESS = "in_progress"          # WIP
-    UPLOADED = "uploaded"                # Uploaded by artist
-    INTERNAL_REVIEW = "internal_review"  # Under supervisor review
-    RETAKE = "retake"                    # Needs redo
-    HOLD = "hold"                        # On hold
-    APPROVED = "approved"                # Final approved
+    YTS = "yts"
+    IN_PROGRESS = "in_progress"
+    UPLOADED = "uploaded"
+    INTERNAL_REVIEW = "internal_review"
+    RETAKE = "retake"
+    HOLD = "hold"
+    APPROVED = "approved"
 
 class ShotComplexity(str, Enum):
     A = "A"
     B = "B"
     C = "C"
-
-class FPS(int, Enum):
-    FPS_24 = 24
-    FPS_25 = 25
-    FPS_30 = 30
 
 # ============== MODELS ==============
 class UserCreate(BaseModel):
@@ -79,14 +67,7 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
-    role: UserRole  # Role must be provided at login
-
-class UserResponse(BaseModel):
-    id: str
-    email: str
-    name: str
-    role: str
-    created_at: datetime
+    role: UserRole
 
 class DriveLink(BaseModel):
     name: str
@@ -97,7 +78,7 @@ class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = ""
     thumbnail_url: Optional[str] = ""
-    fps: int = 25  # Default 25fps
+    fps: int = 25
     drive_links: Optional[List[DriveLink]] = []
 
 class ProjectUpdate(BaseModel):
@@ -106,6 +87,9 @@ class ProjectUpdate(BaseModel):
     thumbnail_url: Optional[str] = None
     fps: Optional[int] = None
     drive_links: Optional[List[DriveLink]] = None
+    custom_statuses: Optional[List[dict]] = None    # [{value, label, color}]
+    removed_statuses: Optional[List[str]] = None    # default status values to hide
+    sheets: Optional[List[dict]] = None             # [{name, data, visibleTo, uploadedAt, uploadedBy}]
 
 class TeamMemberAdd(BaseModel):
     user_id: str
@@ -121,11 +105,11 @@ class EpisodeUpdate(BaseModel):
     description: Optional[str] = None
 
 class ShotCreate(BaseModel):
-    shot_number: str              # e.g. sh0102
+    shot_number: str
     description: Optional[str] = ""
     complexity: Optional[ShotComplexity] = None
-    frames: Optional[int] = None  # Total frame count
-    approved_layout_version: Optional[str] = ""  # V001, V002 etc
+    frames: Optional[int] = None
+    approved_layout_version: Optional[str] = ""
     deadline: Optional[datetime] = None
 
 class ShotUpdate(BaseModel):
@@ -136,7 +120,7 @@ class ShotUpdate(BaseModel):
     deadline: Optional[datetime] = None
     status: Optional[ShotStatus] = None
     assigned_to: Optional[str] = None
-    feedback_link: Optional[str] = None  # External feedback URL
+    feedback_link: Optional[str] = None
 
 class FileLink(BaseModel):
     name: str
@@ -201,12 +185,6 @@ async def get_current_user(request: Request) -> dict:
 
 # ============== ROLE PERMISSION HELPER ==============
 def check_can_create_user(creator_role: str, new_role: str):
-    """
-    Client     → can create anyone
-    PM         → can create supervisor, artist
-    Supervisor → can create artist only
-    Artist     → cannot create anyone
-    """
     allowed = {
         "client": ["production_manager", "supervisor", "artist"],
         "production_manager": ["supervisor", "artist"],
@@ -243,21 +221,16 @@ async def create_notification(user_id: str, title: str, message: str, link: str 
 
 # ============== SHOT ID GENERATOR ==============
 def generate_shot_id(episode_number: int, shot_number: str) -> str:
-    """Generate shot ID like ep001_sh0102"""
-    ep = f"ep{episode_number:03d}"
-    return f"{ep}_{shot_number}"
+    return f"ep{episode_number:03d}_{shot_number}"
 
 # ============== AUTH ROUTES ==============
 @api_router.post("/auth/register")
 async def register(user_data: UserCreate, response: Response, current_user: dict = Depends(get_current_user)):
-    """Only authenticated users can create new users based on role hierarchy"""
     check_can_create_user(current_user["role"], user_data.role.value)
-
     email = user_data.email.lower()
     existing = await db.users.find_one({"email": email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-
     hashed = hash_password(user_data.password)
     user_doc = {
         "email": email,
@@ -268,15 +241,7 @@ async def register(user_data: UserCreate, response: Response, current_user: dict
         "created_at": datetime.now(timezone.utc)
     }
     result = await db.users.insert_one(user_doc)
-    user_id = str(result.inserted_id)
-
-    return {
-        "id": user_id,
-        "email": email,
-        "name": user_data.name,
-        "role": user_data.role.value,
-        "created_at": user_doc["created_at"]
-    }
+    return {"id": str(result.inserted_id), "email": email, "name": user_data.name, "role": user_data.role.value, "created_at": user_doc["created_at"]}
 
 @api_router.post("/auth/login")
 async def login(credentials: UserLogin, response: Response, request: Request):
@@ -284,7 +249,6 @@ async def login(credentials: UserLogin, response: Response, request: Request):
     ip = request.client.host if request.client else "unknown"
     identifier = f"{ip}:{email}"
 
-    # Check brute force
     attempts = await db.login_attempts.find_one({"identifier": identifier})
     if attempts and attempts.get("count", 0) >= 5:
         lockout_until = attempts.get("lockout_until")
@@ -292,48 +256,29 @@ async def login(credentials: UserLogin, response: Response, request: Request):
             raise HTTPException(status_code=429, detail="Too many login attempts. Try again in 15 minutes.")
 
     user = await db.users.find_one({"email": email})
-
-    # Verify password
     if not user or not verify_password(credentials.password, user["password_hash"]):
         await db.login_attempts.update_one(
             {"identifier": identifier},
-            {
-                "$inc": {"count": 1},
-                "$set": {"lockout_until": datetime.now(timezone.utc) + timedelta(minutes=15)}
-            },
+            {"$inc": {"count": 1}, "$set": {"lockout_until": datetime.now(timezone.utc) + timedelta(minutes=15)}},
             upsert=True
         )
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    # Verify role matches
     if user["role"] != credentials.role.value:
         await db.login_attempts.update_one(
             {"identifier": identifier},
-            {
-                "$inc": {"count": 1},
-                "$set": {"lockout_until": datetime.now(timezone.utc) + timedelta(minutes=15)}
-            },
+            {"$inc": {"count": 1}, "$set": {"lockout_until": datetime.now(timezone.utc) + timedelta(minutes=15)}},
             upsert=True
         )
         raise HTTPException(status_code=401, detail=f"Invalid role. This account is registered as '{user['role']}'")
 
-    # Clear failed attempts on success
     await db.login_attempts.delete_one({"identifier": identifier})
-
     user_id = str(user["_id"])
     access_token = create_access_token(user_id, email)
     refresh_token = create_refresh_token(user_id)
-
     response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="none", max_age=28800, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
-
-    return {
-        "id": user_id,
-        "email": user["email"],
-        "name": user["name"],
-        "role": user["role"],
-        "created_at": user["created_at"]
-    }
+    return {"id": user_id, "email": user["email"], "name": user["name"], "role": user["role"], "created_at": user["created_at"]}
 
 @api_router.post("/auth/logout")
 async def logout(response: Response):
@@ -357,7 +302,6 @@ async def refresh_token(request: Request, response: Response):
         user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
-
         access_token = create_access_token(str(user["_id"]), user["email"])
         response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="none", max_age=28800, path="/")
         return {"message": "Token refreshed"}
@@ -371,18 +315,12 @@ async def refresh_token(request: Request, response: Response):
 async def get_users(user: dict = Depends(get_current_user)):
     if user["role"] not in ["client", "production_manager", "supervisor"]:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    # Filter users based on role
     if user["role"] == "supervisor":
-        # Supervisors only see artists
         users = await db.users.find({"role": "artist"}, {"password_hash": 0}).to_list(1000)
     elif user["role"] == "production_manager":
-        # PM sees supervisors and artists
         users = await db.users.find({"role": {"$in": ["supervisor", "artist"]}}, {"password_hash": 0}).to_list(1000)
     else:
-        # Client sees all
         users = await db.users.find({}, {"password_hash": 0}).to_list(1000)
-
     return [{"id": str(u["_id"]), **{k: v for k, v in u.items() if k != "_id"}} for u in users]
 
 @api_router.get("/users/{user_id}")
@@ -396,11 +334,7 @@ async def get_user(user_id: str, user: dict = Depends(get_current_user)):
 async def update_user_role(user_id: str, role: UserRole, user: dict = Depends(get_current_user)):
     if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only client or production manager can change roles")
-
-    result = await db.users.update_one(
-        {"_id": ObjectId(user_id)},
-        {"$set": {"role": role.value}}
-    )
+    result = await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"role": role.value}})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Role updated"}
@@ -409,7 +343,6 @@ async def update_user_role(user_id: str, role: UserRole, user: dict = Depends(ge
 async def delete_user(user_id: str, user: dict = Depends(get_current_user)):
     if user["role"] != "client":
         raise HTTPException(status_code=403, detail="Only client can delete users")
-
     result = await db.users.delete_one({"_id": ObjectId(user_id)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
@@ -420,25 +353,24 @@ async def delete_user(user_id: str, user: dict = Depends(get_current_user)):
 async def create_project(project: ProjectCreate, user: dict = Depends(get_current_user)):
     if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only client or production manager can create projects")
-
     if project.fps not in [24, 25, 30]:
         raise HTTPException(status_code=400, detail="FPS must be 24, 25, or 30")
-
     project_doc = {
         "name": project.name,
         "description": project.description,
         "thumbnail_url": project.thumbnail_url or "",
         "fps": project.fps,
         "drive_links": [link.model_dump() for link in project.drive_links] if project.drive_links else [],
+        "custom_statuses": [],
+        "removed_statuses": [],
+        "sheets": [],
         "created_by": user["id"],
         "team_members": [{"user_id": user["id"], "role": user["role"]}],
         "created_at": datetime.now(timezone.utc)
     }
     result = await db.projects.insert_one(project_doc)
     project_id = str(result.inserted_id)
-
     await log_activity(project_id, user["id"], user["name"], "project_created", f"Created project: {project.name}")
-
     return {"id": project_id, **{k: v for k, v in project_doc.items() if k != "_id"}}
 
 @api_router.get("/projects")
@@ -447,21 +379,34 @@ async def get_projects(user: dict = Depends(get_current_user)):
         projects = await db.projects.find({}).to_list(1000)
     else:
         projects = await db.projects.find({"team_members.user_id": user["id"]}).to_list(1000)
-
-    return [{"id": str(p["_id"]), **{k: v for k, v in p.items() if k != "_id"}} for p in projects]
+    result = []
+    for p in projects:
+        p_data = {"id": str(p["_id"]), **{k: v for k, v in p.items() if k != "_id"}}
+        # Strip full sheet data from list view — just return count
+        if "sheets" in p_data:
+            p_data["sheet_count"] = len(p_data["sheets"])
+            del p_data["sheets"]
+        result.append(p_data)
+    return result
 
 @api_router.get("/projects/{project_id}")
 async def get_project(project_id: str, user: dict = Depends(get_current_user)):
     project = await db.projects.find_one({"_id": ObjectId(project_id)})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-
     if user["role"] not in ["client", "production_manager"]:
         member_ids = [m["user_id"] for m in project.get("team_members", [])]
         if user["id"] not in member_ids:
             raise HTTPException(status_code=403, detail="No access to this project")
-
-    return {"id": str(project["_id"]), **{k: v for k, v in project.items() if k != "_id"}}
+    p_data = {"id": str(project["_id"]), **{k: v for k, v in project.items() if k != "_id"}}
+    # Filter sheets by role
+    if user["role"] != "client":
+        all_sheets = p_data.get("sheets", [])
+        p_data["sheets"] = [
+            s for s in all_sheets
+            if s.get("visibleTo") and user["role"] in s.get("visibleTo", [])
+        ]
+    return p_data
 
 @api_router.put("/projects/{project_id}")
 async def update_project(project_id: str, update: ProjectUpdate, user: dict = Depends(get_current_user)):
@@ -470,24 +415,25 @@ async def update_project(project_id: str, update: ProjectUpdate, user: dict = De
 
     update_data = {}
     for k, v in update.model_dump().items():
-        if v is not None:
-            if k == "drive_links" and v:
-                update_data[k] = [link if isinstance(link, dict) else link.model_dump() for link in v]
-            elif k == "fps" and v not in [24, 25, 30]:
+        if v is None:
+            continue
+        if k == "drive_links":
+            update_data[k] = [link if isinstance(link, dict) else link.model_dump() for link in v]
+        elif k == "fps":
+            if v not in [24, 25, 30]:
                 raise HTTPException(status_code=400, detail="FPS must be 24, 25, or 30")
-            else:
-                update_data[k] = v
+            update_data[k] = v
+        elif k in ["custom_statuses", "removed_statuses", "sheets"]:
+            update_data[k] = v  # store list fields as-is
+        else:
+            update_data[k] = v
 
     if not update_data:
         raise HTTPException(status_code=400, detail="No update data provided")
 
-    result = await db.projects.update_one(
-        {"_id": ObjectId(project_id)},
-        {"$set": update_data}
-    )
+    result = await db.projects.update_one({"_id": ObjectId(project_id)}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Project not found")
-
     await log_activity(project_id, user["id"], user["name"], "project_updated", "Updated project details")
     return {"message": "Project updated"}
 
@@ -495,50 +441,35 @@ async def update_project(project_id: str, update: ProjectUpdate, user: dict = De
 async def delete_project(project_id: str, user: dict = Depends(get_current_user)):
     if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only client or production manager can delete projects")
-
     result = await db.projects.delete_one({"_id": ObjectId(project_id)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Project not found")
-
-    # Also delete related episodes, shots and feedback
-    episodes = await db.episodes.find({"project_id": project_id}, {"_id": 1}).to_list(1000)
-    episode_ids = [str(e["_id"]) for e in episodes]
     await db.episodes.delete_many({"project_id": project_id})
     await db.shots.delete_many({"project_id": project_id})
     await db.feedback.delete_many({"project_id": project_id})
     await db.activity_logs.delete_many({"project_id": project_id})
-
     return {"message": "Project deleted"}
 
 @api_router.post("/projects/{project_id}/team")
 async def add_team_member(project_id: str, member: TeamMemberAdd, user: dict = Depends(get_current_user)):
     if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only client or production manager can manage team")
-
     target_user = await db.users.find_one({"_id": ObjectId(member.user_id)})
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
-
     await db.projects.update_one(
         {"_id": ObjectId(project_id)},
         {"$addToSet": {"team_members": {"user_id": member.user_id, "role": member.role.value}}}
     )
-
     await log_activity(project_id, user["id"], user["name"], "team_member_added", f"Added {target_user['name']} to team")
-    await create_notification(member.user_id, "Added to Project", f"You have been added to a project", f"/projects/{project_id}")
-
+    await create_notification(member.user_id, "Added to Project", "You have been added to a project", f"/projects/{project_id}")
     return {"message": "Team member added"}
 
 @api_router.delete("/projects/{project_id}/team/{member_id}")
 async def remove_team_member(project_id: str, member_id: str, user: dict = Depends(get_current_user)):
     if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only client or production manager can manage team")
-
-    await db.projects.update_one(
-        {"_id": ObjectId(project_id)},
-        {"$pull": {"team_members": {"user_id": member_id}}}
-    )
-
+    await db.projects.update_one({"_id": ObjectId(project_id)}, {"$pull": {"team_members": {"user_id": member_id}}})
     await log_activity(project_id, user["id"], user["name"], "team_member_removed", "Removed team member")
     return {"message": "Team member removed"}
 
@@ -547,16 +478,12 @@ async def remove_team_member(project_id: str, member_id: str, user: dict = Depen
 async def create_episode(project_id: str, episode: EpisodeCreate, user: dict = Depends(get_current_user)):
     if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only client or production manager can create episodes")
-
     project = await db.projects.find_one({"_id": ObjectId(project_id)})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-
-    # Check duplicate episode number
     existing = await db.episodes.find_one({"project_id": project_id, "episode_number": episode.episode_number})
     if existing:
-        raise HTTPException(status_code=400, detail=f"Episode {episode.episode_number} already exists in this project")
-
+        raise HTTPException(status_code=400, detail=f"Episode {episode.episode_number} already exists")
     episode_doc = {
         "project_id": project_id,
         "episode_number": episode.episode_number,
@@ -567,34 +494,24 @@ async def create_episode(project_id: str, episode: EpisodeCreate, user: dict = D
         "created_at": datetime.now(timezone.utc)
     }
     result = await db.episodes.insert_one(episode_doc)
-    episode_id = str(result.inserted_id)
-
     await log_activity(project_id, user["id"], user["name"], "episode_created", f"Created episode: ep{episode.episode_number:03d}")
-
-    return {"id": episode_id, **{k: v for k, v in episode_doc.items() if k != "_id"}}
+    return {"id": str(result.inserted_id), **{k: v for k, v in episode_doc.items() if k != "_id"}}
 
 @api_router.get("/projects/{project_id}/episodes")
 async def get_episodes(project_id: str, user: dict = Depends(get_current_user)):
     project = await db.projects.find_one({"_id": ObjectId(project_id)})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-
-    # Check access
     if user["role"] not in ["client", "production_manager"]:
         member_ids = [m["user_id"] for m in project.get("team_members", [])]
         if user["id"] not in member_ids:
             raise HTTPException(status_code=403, detail="No access to this project")
-
     episodes = await db.episodes.find({"project_id": project_id}).sort("episode_number", 1).to_list(1000)
-
     result = []
     for ep in episodes:
         ep_data = {"id": str(ep["_id"]), **{k: v for k, v in ep.items() if k != "_id"}}
-        # Count shots in this episode
-        shot_count = await db.shots.count_documents({"episode_id": str(ep["_id"])})
-        ep_data["shot_count"] = shot_count
+        ep_data["shot_count"] = await db.shots.count_documents({"episode_id": str(ep["_id"])})
         result.append(ep_data)
-
     return result
 
 @api_router.get("/projects/{project_id}/episodes/{episode_id}")
@@ -608,32 +525,22 @@ async def get_episode(project_id: str, episode_id: str, user: dict = Depends(get
 async def update_episode(project_id: str, episode_id: str, update: EpisodeUpdate, user: dict = Depends(get_current_user)):
     if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only client or production manager can update episodes")
-
     update_data = {k: v for k, v in update.model_dump().items() if v is not None}
     if not update_data:
         raise HTTPException(status_code=400, detail="No update data provided")
-
-    result = await db.episodes.update_one(
-        {"_id": ObjectId(episode_id), "project_id": project_id},
-        {"$set": update_data}
-    )
+    result = await db.episodes.update_one({"_id": ObjectId(episode_id), "project_id": project_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Episode not found")
-
     return {"message": "Episode updated"}
 
 @api_router.delete("/projects/{project_id}/episodes/{episode_id}")
 async def delete_episode(project_id: str, episode_id: str, user: dict = Depends(get_current_user)):
     if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only client or production manager can delete episodes")
-
     result = await db.episodes.delete_one({"_id": ObjectId(episode_id), "project_id": project_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Episode not found")
-
-    # Delete all shots in this episode
     await db.shots.delete_many({"episode_id": episode_id})
-
     await log_activity(project_id, user["id"], user["name"], "episode_deleted", "Deleted episode")
     return {"message": "Episode deleted"}
 
@@ -642,33 +549,24 @@ async def delete_episode(project_id: str, episode_id: str, user: dict = Depends(
 async def create_shot(project_id: str, episode_id: str, shot: ShotCreate, user: dict = Depends(get_current_user)):
     if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only client or production manager can create shots")
-
     project = await db.projects.find_one({"_id": ObjectId(project_id)})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-
     episode = await db.episodes.find_one({"_id": ObjectId(episode_id), "project_id": project_id})
     if not episode:
         raise HTTPException(status_code=404, detail="Episode not found")
-
-    # Generate full shot ID e.g. ep001_sh0102
     full_shot_id = generate_shot_id(episode["episode_number"], shot.shot_number)
-
-    # Check duplicate
     existing = await db.shots.find_one({"episode_id": episode_id, "shot_number": shot.shot_number})
     if existing:
         raise HTTPException(status_code=400, detail=f"Shot {full_shot_id} already exists")
-
-    # Calculate duration from frames and project FPS
     fps = project.get("fps", 25)
     duration_seconds = round(shot.frames / fps, 2) if shot.frames else None
-
     shot_doc = {
         "project_id": project_id,
         "episode_id": episode_id,
         "episode_code": episode["episode_code"],
         "shot_number": shot.shot_number,
-        "shot_id": full_shot_id,           # e.g. ep001_sh0102
+        "shot_id": full_shot_id,
         "description": shot.description or "",
         "complexity": shot.complexity.value if shot.complexity else None,
         "frames": shot.frames,
@@ -678,101 +576,71 @@ async def create_shot(project_id: str, episode_id: str, shot: ShotCreate, user: 
         "deadline": shot.deadline,
         "status": ShotStatus.YTS.value,
         "assigned_to": None,
-        "feedback_link": "",               # External feedback URL
+        "feedback_link": "",
         "file_links": [],
         "created_by": user["id"],
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc)
     }
     result = await db.shots.insert_one(shot_doc)
-    shot_db_id = str(result.inserted_id)
-
     await log_activity(project_id, user["id"], user["name"], "shot_created", f"Created shot: {full_shot_id}")
-
-    return {"id": shot_db_id, **{k: v for k, v in shot_doc.items() if k != "_id"}}
+    return {"id": str(result.inserted_id), **{k: v for k, v in shot_doc.items() if k != "_id"}}
 
 @api_router.get("/projects/{project_id}/episodes/{episode_id}/shots")
 async def get_shots(project_id: str, episode_id: str, status: Optional[str] = None, user: dict = Depends(get_current_user)):
     query = {"project_id": project_id, "episode_id": episode_id}
-
     if user["role"] == "artist":
         query["assigned_to"] = user["id"]
-
     if status:
         query["status"] = status
-
     shots = await db.shots.find(query).sort("shot_number", 1).to_list(1000)
-
-    # Batch fetch assigned users
     user_ids = list(set([s.get("assigned_to") for s in shots if s.get("assigned_to")]))
     user_map = {}
     if user_ids:
-        users = await db.users.find(
-            {"_id": {"$in": [ObjectId(uid) for uid in user_ids]}},
-            {"name": 1}
-        ).to_list(1000)
+        users = await db.users.find({"_id": {"$in": [ObjectId(uid) for uid in user_ids]}}, {"name": 1}).to_list(1000)
         user_map = {str(u["_id"]): u["name"] for u in users}
-
     result = []
     for s in shots:
         shot_data = {"id": str(s["_id"]), **{k: v for k, v in s.items() if k != "_id"}}
         if s.get("assigned_to"):
             shot_data["assigned_to_name"] = user_map.get(s["assigned_to"], "Unknown")
         result.append(shot_data)
-
     return result
 
 @api_router.get("/projects/{project_id}/shots")
 async def get_all_project_shots(project_id: str, status: Optional[str] = None, user: dict = Depends(get_current_user)):
-    """Get all shots across all episodes for a project"""
     query = {"project_id": project_id}
-
     if user["role"] == "artist":
         query["assigned_to"] = user["id"]
-
     if status:
         query["status"] = status
-
     shots = await db.shots.find(query).sort([("episode_code", 1), ("shot_number", 1)]).to_list(1000)
-
     user_ids = list(set([s.get("assigned_to") for s in shots if s.get("assigned_to")]))
     user_map = {}
     if user_ids:
-        users = await db.users.find(
-            {"_id": {"$in": [ObjectId(uid) for uid in user_ids]}},
-            {"name": 1}
-        ).to_list(1000)
+        users = await db.users.find({"_id": {"$in": [ObjectId(uid) for uid in user_ids]}}, {"name": 1}).to_list(1000)
         user_map = {str(u["_id"]): u["name"] for u in users}
-
     result = []
     for s in shots:
         shot_data = {"id": str(s["_id"]), **{k: v for k, v in s.items() if k != "_id"}}
         if s.get("assigned_to"):
             shot_data["assigned_to_name"] = user_map.get(s["assigned_to"], "Unknown")
         result.append(shot_data)
-
     return result
 
 @api_router.get("/shots/assigned")
 async def get_assigned_shots(user: dict = Depends(get_current_user)):
-    """Get all shots assigned to current user across all projects"""
     shots = await db.shots.find({"assigned_to": user["id"]}).to_list(1000)
-
     project_ids = list(set([s["project_id"] for s in shots]))
     project_map = {}
     if project_ids:
-        projects = await db.projects.find(
-            {"_id": {"$in": [ObjectId(pid) for pid in project_ids]}},
-            {"name": 1}
-        ).to_list(1000)
+        projects = await db.projects.find({"_id": {"$in": [ObjectId(pid) for pid in project_ids]}}, {"name": 1}).to_list(1000)
         project_map = {str(p["_id"]): p["name"] for p in projects}
-
     result = []
     for s in shots:
         shot_data = {"id": str(s["_id"]), **{k: v for k, v in s.items() if k != "_id"}}
         shot_data["project_name"] = project_map.get(s["project_id"], "Unknown")
         result.append(shot_data)
-
     return result
 
 @api_router.get("/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}")
@@ -780,12 +648,10 @@ async def get_shot(project_id: str, episode_id: str, shot_id: str, user: dict = 
     shot = await db.shots.find_one({"_id": ObjectId(shot_id), "project_id": project_id, "episode_id": episode_id})
     if not shot:
         raise HTTPException(status_code=404, detail="Shot not found")
-
     shot_data = {"id": str(shot["_id"]), **{k: v for k, v in shot.items() if k != "_id"}}
     if shot.get("assigned_to"):
         assigned_user = await db.users.find_one({"_id": ObjectId(shot["assigned_to"])}, {"name": 1})
         shot_data["assigned_to_name"] = assigned_user["name"] if assigned_user else "Unknown"
-
     return shot_data
 
 @api_router.put("/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}")
@@ -795,7 +661,6 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
         raise HTTPException(status_code=404, detail="Shot not found")
 
     if user["role"] == "artist":
-        # Artist can only update status of their assigned shot
         if shot.get("assigned_to") != user["id"]:
             raise HTTPException(status_code=403, detail="Not assigned to this shot")
         if update.status and update.status.value not in ["in_progress", "uploaded"]:
@@ -804,20 +669,16 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
         if update.status:
             update_data["status"] = update.status.value
     elif user["role"] == "supervisor":
-        # Supervisor can assign, update status, add feedback link, update layout version
         allowed_fields = ["status", "assigned_to", "feedback_link", "approved_layout_version"]
         update_data = {}
         for k, v in update.model_dump().items():
             if v is not None and k in allowed_fields:
                 update_data[k] = v.value if isinstance(v, Enum) else v
     else:
-        # Client and PM can update everything
         update_data = {}
         for k, v in update.model_dump().items():
             if v is not None:
                 update_data[k] = v.value if isinstance(v, Enum) else v
-
-        # Recalculate duration if frames updated
         if "frames" in update_data:
             project = await db.projects.find_one({"_id": ObjectId(project_id)})
             fps = project.get("fps", 25) if project else 25
@@ -827,36 +688,24 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
         raise HTTPException(status_code=400, detail="No update data provided")
 
     update_data["updated_at"] = datetime.now(timezone.utc)
-
     old_status = shot.get("status")
     old_assigned = shot.get("assigned_to")
 
-    await db.shots.update_one(
-        {"_id": ObjectId(shot_id)},
-        {"$set": update_data}
-    )
+    await db.shots.update_one({"_id": ObjectId(shot_id)}, {"$set": update_data})
 
-    # Notify on status change
     if "status" in update_data and old_status != update_data["status"]:
         if shot.get("assigned_to"):
-            await create_notification(
-                shot["assigned_to"],
-                "Shot Status Changed",
+            await create_notification(shot["assigned_to"], "Shot Status Changed",
                 f"Shot {shot['shot_id']} status changed to {update_data['status']}",
-                f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}"
-            )
+                f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}")
         await log_activity(project_id, user["id"], user["name"], "shot_status_changed",
-                           f"Shot {shot['shot_id']}: {old_status} → {update_data['status']}")
+            f"Shot {shot['shot_id']}: {old_status} → {update_data['status']}")
 
-    # Notify on assignment
     if "assigned_to" in update_data and old_assigned != update_data["assigned_to"]:
         if update_data["assigned_to"]:
-            await create_notification(
-                update_data["assigned_to"],
-                "Shot Assigned",
+            await create_notification(update_data["assigned_to"], "Shot Assigned",
                 f"You have been assigned to shot {shot['shot_id']}",
-                f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}"
-            )
+                f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}")
         await log_activity(project_id, user["id"], user["name"], "shot_assigned", f"Assigned shot {shot['shot_id']}")
 
     return {"message": "Shot updated"}
@@ -865,11 +714,9 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
 async def delete_shot(project_id: str, episode_id: str, shot_id: str, user: dict = Depends(get_current_user)):
     if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only client or production manager can delete shots")
-
     result = await db.shots.delete_one({"_id": ObjectId(shot_id), "project_id": project_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Shot not found")
-
     await db.feedback.delete_many({"shot_id": shot_id})
     await log_activity(project_id, user["id"], user["name"], "shot_deleted", "Deleted shot")
     return {"message": "Shot deleted"}
@@ -879,29 +726,16 @@ async def add_file_link(project_id: str, episode_id: str, shot_id: str, file: Fi
     shot = await db.shots.find_one({"_id": ObjectId(shot_id), "project_id": project_id})
     if not shot:
         raise HTTPException(status_code=404, detail="Shot not found")
-
     if user["role"] == "artist" and shot.get("assigned_to") != user["id"]:
         raise HTTPException(status_code=403, detail="Not assigned to this shot")
-
     file_entry = {
-        "name": file.name,
-        "url": file.url,
-        "file_type": file.file_type,
-        "uploaded_by": user["id"],
-        "uploaded_by_name": user["name"],
+        "name": file.name, "url": file.url, "file_type": file.file_type,
+        "uploaded_by": user["id"], "uploaded_by_name": user["name"],
         "uploaded_at": datetime.now(timezone.utc)
     }
-
-    await db.shots.update_one(
-        {"_id": ObjectId(shot_id)},
-        {
-            "$push": {"file_links": file_entry},
-            "$set": {"updated_at": datetime.now(timezone.utc)}
-        }
-    )
-
-    await log_activity(project_id, user["id"], user["name"], "file_uploaded",
-                       f"Added file to shot {shot['shot_id']}: {file.name}")
+    await db.shots.update_one({"_id": ObjectId(shot_id)},
+        {"$push": {"file_links": file_entry}, "$set": {"updated_at": datetime.now(timezone.utc)}})
+    await log_activity(project_id, user["id"], user["name"], "file_uploaded", f"Added file to shot {shot['shot_id']}: {file.name}")
     return {"message": "File link added"}
 
 # ============== FEEDBACK ROUTES ==============
@@ -909,35 +743,22 @@ async def add_file_link(project_id: str, episode_id: str, shot_id: str, file: Fi
 async def create_feedback(project_id: str, episode_id: str, shot_id: str, feedback: FeedbackCreate, user: dict = Depends(get_current_user)):
     if user["role"] not in ["client", "supervisor"]:
         raise HTTPException(status_code=403, detail="Only client or supervisor can give feedback")
-
     shot = await db.shots.find_one({"_id": ObjectId(shot_id), "project_id": project_id})
     if not shot:
         raise HTTPException(status_code=404, detail="Shot not found")
-
     feedback_doc = {
-        "project_id": project_id,
-        "episode_id": episode_id,
-        "shot_id": shot_id,
-        "user_id": user["id"],
-        "user_name": user["name"],
-        "user_role": user["role"],
+        "project_id": project_id, "episode_id": episode_id, "shot_id": shot_id,
+        "user_id": user["id"], "user_name": user["name"], "user_role": user["role"],
         "comment": feedback.comment,
         "attachments": [a.model_dump() for a in feedback.attachments] if feedback.attachments else [],
         "created_at": datetime.now(timezone.utc)
     }
     result = await db.feedback.insert_one(feedback_doc)
-
     if shot.get("assigned_to"):
-        await create_notification(
-            shot["assigned_to"],
-            "New Feedback",
+        await create_notification(shot["assigned_to"], "New Feedback",
             f"New feedback on shot {shot['shot_id']}",
-            f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}"
-        )
-
-    await log_activity(project_id, user["id"], user["name"], "feedback_added",
-                       f"Added feedback to shot {shot['shot_id']}")
-
+            f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}")
+    await log_activity(project_id, user["id"], user["name"], "feedback_added", f"Added feedback to shot {shot['shot_id']}")
     return {"id": str(result.inserted_id), **{k: v for k, v in feedback_doc.items() if k != "_id"}}
 
 @api_router.get("/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}/feedback")
@@ -954,19 +775,14 @@ async def get_notifications(user: dict = Depends(get_current_user)):
 @api_router.put("/notifications/{notification_id}/read")
 async def mark_notification_read(notification_id: str, user: dict = Depends(get_current_user)):
     result = await db.notifications.update_one(
-        {"_id": ObjectId(notification_id), "user_id": user["id"]},
-        {"$set": {"read": True}}
-    )
+        {"_id": ObjectId(notification_id), "user_id": user["id"]}, {"$set": {"read": True}})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Notification not found")
     return {"message": "Notification marked as read"}
 
 @api_router.put("/notifications/read-all")
 async def mark_all_notifications_read(user: dict = Depends(get_current_user)):
-    await db.notifications.update_many(
-        {"user_id": user["id"]},
-        {"$set": {"read": True}}
-    )
+    await db.notifications.update_many({"user_id": user["id"]}, {"$set": {"read": True}})
     return {"message": "All notifications marked as read"}
 
 # ============== ACTIVITY LOG ROUTES ==============
@@ -989,22 +805,16 @@ async def get_dashboard_stats(user: dict = Depends(get_current_user)):
         if user["role"] == "artist":
             total_shots = await db.shots.count_documents({"assigned_to": user["id"]})
         else:
-            project_ids = [str(p["_id"]) for p in await db.projects.find(
-                {"team_members.user_id": user["id"]}, {"_id": 1}).to_list(1000)]
+            project_ids = [str(p["_id"]) for p in await db.projects.find({"team_members.user_id": user["id"]}, {"_id": 1}).to_list(1000)]
             total_shots = await db.shots.count_documents({"project_id": {"$in": project_ids}})
         total_users = 0
-
-    # Shot status counts
     status_counts = {}
     for status in ShotStatus:
         if user["role"] == "artist":
             count = await db.shots.count_documents({"assigned_to": user["id"], "status": status.value})
-        elif user["role"] in ["client", "production_manager"]:
-            count = await db.shots.count_documents({"status": status.value})
         else:
             count = await db.shots.count_documents({"status": status.value})
         status_counts[status.value] = count
-
     return {
         "total_projects": total_projects,
         "total_episodes": total_episodes,
@@ -1019,52 +829,30 @@ async def generate_bat_file(project_id: str, user: dict = Depends(get_current_us
     project = await db.projects.find_one({"_id": ObjectId(project_id)})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-
     drive_links = project.get("drive_links", [])
     primary_link = ""
     for link in drive_links:
         if link.get("link_type") in ["onedrive", "google_drive"] or \
-           "onedrive" in link.get("url", "").lower() or \
-           "drive.google" in link.get("url", "").lower():
+           "onedrive" in link.get("url", "").lower() or "drive.google" in link.get("url", "").lower():
             primary_link = link.get("url", "")
             break
     if not primary_link and drive_links:
         primary_link = drive_links[0].get("url", "")
-
-    links_section = ""
-    for i, link in enumerate(drive_links):
-        links_section += f"echo   {i+1}. {link.get('name', 'Link')}: {link.get('url', '')}\n"
-
+    links_section = "".join([f"echo   {i+1}. {l.get('name', 'Link')}: {l.get('url', '')}\n" for i, l in enumerate(drive_links)])
     bat_content = f"""@echo off
-:: Toonweaver Drive Mapper
-:: Project: {project['name']}
-:: FPS: {project.get('fps', 25)}
-:: Generated for: {user['name']}
-
+:: Toonweaver Drive Mapper — Project: {project['name']} | FPS: {project.get('fps', 25)}
 echo ============================================
-echo  Toonweaver Drive Mapper
-echo  Project: {project['name']}
+echo  Toonweaver Drive Mapper — {project['name']}
 echo ============================================
 echo.
-
 echo Project Links:
 {links_section if links_section else "echo   No links configured"}
-
-if exist M:\\ (
-    net use M: /delete /y
-)
-
+if exist M:\\ ( net use M: /delete /y )
 set DRIVE_PATH={primary_link if primary_link else "https://your-drive-url"}
 net use M: "%DRIVE_PATH%" /persistent:yes
-
-if %errorlevel% equ 0 (
-    echo SUCCESS! M: drive mapped.
-) else (
-    echo FAILED. Try RaiDrive: https://www.raidrive.com/
-)
+if %errorlevel% equ 0 ( echo SUCCESS! M: drive mapped. ) else ( echo FAILED. Try RaiDrive: https://www.raidrive.com/ )
 pause
 """
-
     return StreamingResponse(
         io.BytesIO(bat_content.encode('utf-8')),
         media_type="application/octet-stream",
@@ -1076,20 +864,12 @@ pause
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now(timezone.utc)}
 
-# Include the router
 app.include_router(api_router)
 
-# CORS Configuration
+# CORS
 cors_origins = os.environ.get("CORS_ORIGINS", "https://toonweaver.vercel.app")
 allow_origins_list = [origin.strip() for origin in cors_origins.split(",")]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allow_origins_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, allow_origins=allow_origins_list, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 # ============== STARTUP ==============
 @app.on_event("startup")
@@ -1103,31 +883,19 @@ async def startup_event():
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     await db.activity_logs.create_index([("project_id", 1), ("timestamp", -1)])
 
-    # Seed client user
     client_email = os.environ.get("ADMIN_EMAIL", "client@toonweaver.com")
     client_password = os.environ.get("ADMIN_PASSWORD", "Client123!")
     existing = await db.users.find_one({"email": client_email})
-
     if existing is None:
-        hashed = hash_password(client_password)
         await db.users.insert_one({
-            "email": client_email,
-            "password_hash": hashed,
-            "name": "Client",
-            "role": "client",
-            "created_at": datetime.now(timezone.utc)
+            "email": client_email, "password_hash": hash_password(client_password),
+            "name": "Client", "role": "client", "created_at": datetime.now(timezone.utc)
         })
         logger.info(f"Client user created: {client_email}")
     else:
-        await db.users.update_one(
-            {"email": client_email},
-            {"$set": {
-                "password_hash": hash_password(client_password),
-                "role": "client"
-            }}
-        )
+        await db.users.update_one({"email": client_email},
+            {"$set": {"password_hash": hash_password(client_password), "role": "client"}})
         logger.info(f"Client user updated: {client_email}")
-
     logger.info("Startup complete")
 
 @app.on_event("shutdown")
