@@ -49,8 +49,8 @@ const roleConfig = {
     artist:             { label: 'Artist',               icon: User,    color: 'text-blue-400',    bg: 'bg-blue-500/10'    },
 };
 
-// Which roles each role can create
-const creatableRoles = {
+// Which roles each role can create OR assign
+const assignableRoles = {
     client:             ['production_manager', 'supervisor', 'artist'],
     production_manager: ['supervisor', 'artist'],
     supervisor:         ['artist'],
@@ -76,7 +76,7 @@ export default function UsersPage() {
         role: '',
     });
 
-    const allowedRoles = creatableRoles[currentUser?.role] || [];
+    const allowedRoles = assignableRoles[currentUser?.role] || [];
 
     useEffect(() => {
         loadUsers();
@@ -115,13 +115,18 @@ export default function UsersPage() {
         }
     };
 
-    const handleRoleChange = async (userId, role) => {
+    const handleRoleChange = async (userId, newRole) => {
+        // Frontend guard — prevent assigning roles outside allowed list
+        if (!allowedRoles.includes(newRole) && !isClient) {
+            toast.error(`You cannot assign the ${roleConfig[newRole]?.label} role`);
+            return;
+        }
         try {
-            await updateUserRole(userId, role);
+            await updateUserRole(userId, newRole);
             toast.success('Role updated');
             loadUsers();
-        } catch {
-            toast.error('Failed to update role');
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Failed to update role');
         }
     };
 
@@ -177,7 +182,6 @@ export default function UsersPage() {
                                 <DialogTitle className="text-zinc-100">Create New User</DialogTitle>
                             </DialogHeader>
                             <form onSubmit={handleCreateUser} className="space-y-4 mt-4">
-                                {/* Role selector first */}
                                 <div className="space-y-2">
                                     <Label className="text-zinc-300">Role *</Label>
                                     <div className="grid grid-cols-1 gap-2">
@@ -245,9 +249,7 @@ export default function UsersPage() {
                                             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                         </button>
                                     </div>
-                                    <p className="text-xs text-zinc-500">
-                                        Share this password with the user so they can log in.
-                                    </p>
+                                    <p className="text-xs text-zinc-500">Share this password with the user so they can log in.</p>
                                 </div>
 
                                 <div className="flex justify-end gap-3 pt-2">
@@ -322,6 +324,9 @@ export default function UsersPage() {
                                 {filteredUsers.map((u) => {
                                     const config = roleConfig[u.role] || roleConfig.artist;
                                     const isCurrentUser = u.id === currentUser?.id;
+                                    // Can this logged-in user change this user's role?
+                                    const canChangeThisRole = canManageRoles && !isCurrentUser && allowedRoles.includes(u.role);
+
                                     return (
                                         <TableRow key={u.id} className="border-zinc-800">
                                             <TableCell>
@@ -339,7 +344,7 @@ export default function UsersPage() {
                                             </TableCell>
                                             <TableCell className="text-zinc-400">{u.email}</TableCell>
                                             <TableCell>
-                                                {canManageRoles && !isCurrentUser ? (
+                                                {canChangeThisRole ? (
                                                     <Select
                                                         value={u.role}
                                                         onValueChange={(value) => handleRoleChange(u.id, value)}
@@ -351,10 +356,12 @@ export default function UsersPage() {
                                                             </div>
                                                         </SelectTrigger>
                                                         <SelectContent className="bg-zinc-900 border-zinc-800">
-                                                            <SelectItem value="client">Client</SelectItem>
-                                                            <SelectItem value="production_manager">Production Manager</SelectItem>
-                                                            <SelectItem value="supervisor">Supervisor</SelectItem>
-                                                            <SelectItem value="artist">Artist</SelectItem>
+                                                            {/* Only show roles this user is allowed to assign */}
+                                                            {allowedRoles.map((role) => (
+                                                                <SelectItem key={role} value={role}>
+                                                                    {roleConfig[role]?.label}
+                                                                </SelectItem>
+                                                            ))}
                                                         </SelectContent>
                                                     </Select>
                                                 ) : (
@@ -374,31 +381,21 @@ export default function UsersPage() {
                                                     {!isCurrentUser && (
                                                         <AlertDialog>
                                                             <AlertDialogTrigger asChild>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="icon"
-                                                                    className="text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
-                                                                >
+                                                                <Button variant="ghost" size="icon"
+                                                                    className="text-zinc-500 hover:text-red-400 hover:bg-red-500/10">
                                                                     <Trash2 className="w-4 h-4" />
                                                                 </Button>
                                                             </AlertDialogTrigger>
                                                             <AlertDialogContent className="bg-zinc-900 border-zinc-800">
                                                                 <AlertDialogHeader>
-                                                                    <AlertDialogTitle className="text-zinc-100">
-                                                                        Remove {u.name}?
-                                                                    </AlertDialogTitle>
+                                                                    <AlertDialogTitle className="text-zinc-100">Remove {u.name}?</AlertDialogTitle>
                                                                     <AlertDialogDescription className="text-zinc-400">
-                                                                        This will permanently delete {u.name}'s account ({u.email}). They will no longer be able to log in. This action cannot be undone.
+                                                                        This will permanently delete {u.name}'s account ({u.email}). They will no longer be able to log in. This cannot be undone.
                                                                     </AlertDialogDescription>
                                                                 </AlertDialogHeader>
                                                                 <AlertDialogFooter>
-                                                                    <AlertDialogCancel className="bg-zinc-800 text-zinc-300 border-zinc-700">
-                                                                        Cancel
-                                                                    </AlertDialogCancel>
-                                                                    <AlertDialogAction
-                                                                        onClick={() => handleDeleteUser(u.id, u.name)}
-                                                                        className="bg-red-600 hover:bg-red-500"
-                                                                    >
+                                                                    <AlertDialogCancel className="bg-zinc-800 text-zinc-300 border-zinc-700">Cancel</AlertDialogCancel>
+                                                                    <AlertDialogAction onClick={() => handleDeleteUser(u.id, u.name)} className="bg-red-600 hover:bg-red-500">
                                                                         Delete User
                                                                     </AlertDialogAction>
                                                                 </AlertDialogFooter>
