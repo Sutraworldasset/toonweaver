@@ -24,7 +24,6 @@ mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'toonweaver')]
 
-# JWT Configuration
 JWT_ALGORITHM = "HS256"
 
 def get_jwt_secret() -> str:
@@ -87,9 +86,9 @@ class ProjectUpdate(BaseModel):
     thumbnail_url: Optional[str] = None
     fps: Optional[int] = None
     drive_links: Optional[List[DriveLink]] = None
-    custom_statuses: Optional[List[dict]] = None    # [{value, label, color}]
-    removed_statuses: Optional[List[str]] = None    # default status values to hide
-    sheets: Optional[List[dict]] = None             # [{name, data, visibleTo, uploadedAt, uploadedBy}]
+    custom_statuses: Optional[List[dict]] = None
+    removed_statuses: Optional[List[str]] = None
+    sheets: Optional[List[dict]] = None
 
 class TeamMemberAdd(BaseModel):
     user_id: str
@@ -183,18 +182,30 @@ async def get_current_user(request: Request) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-# ============== ROLE PERMISSION HELPER ==============
+# ============== ROLE PERMISSION HELPERS ==============
+# What roles each role is allowed to create or assign
+ROLE_PERMISSIONS = {
+    "client":             ["production_manager", "supervisor", "artist"],
+    "production_manager": ["supervisor", "artist"],
+    "supervisor":         ["artist"],
+    "artist":             [],
+}
+
 def check_can_create_user(creator_role: str, new_role: str):
-    allowed = {
-        "client": ["production_manager", "supervisor", "artist"],
-        "production_manager": ["supervisor", "artist"],
-        "supervisor": ["artist"],
-        "artist": []
-    }
-    if new_role not in allowed.get(creator_role, []):
+    if new_role not in ROLE_PERMISSIONS.get(creator_role, []):
         raise HTTPException(
             status_code=403,
             detail=f"Your role ({creator_role}) cannot create a user with role ({new_role})"
+        )
+
+def check_can_assign_role(assigner_role: str, target_role: str):
+    """Check if assigner is allowed to assign target_role to someone."""
+    if assigner_role == "client":
+        return  # Client can assign any role
+    if target_role not in ROLE_PERMISSIONS.get(assigner_role, []):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Your role ({assigner_role}) cannot assign the '{target_role}' role"
         )
 
 # ============== ACTIVITY LOG ==============
@@ -332,9 +343,29 @@ async def get_user(user_id: str, user: dict = Depends(get_current_user)):
 
 @api_router.put("/users/{user_id}/role")
 async def update_user_role(user_id: str, role: UserRole, user: dict = Depends(get_current_user)):
+    # Only client and PM can change roles
     if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only client or production manager can change roles")
-    result = await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"role": role.value}})
+
+    # Prevent changing your own role
+    if user["id"] == user_id:
+        raise HTTPException(status_code=403, detail="You cannot change your own role")
+
+    # Enforce role assignment restrictions
+    check_can_assign_role(user["role"], role.value)
+
+    # Also check the target user's current role — PM cannot modify a client
+    target = await db.users.find_one({"_id": ObjectId(user_id)}, {"role": 1})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user["role"] == "production_manager" and target["role"] == "client":
+        raise HTTPException(status_code=403, detail="Production manager cannot modify a client account")
+
+    result = await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"role": role.value}}
+    )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Role updated"}
@@ -343,6 +374,8 @@ async def update_user_role(user_id: str, role: UserRole, user: dict = Depends(ge
 async def delete_user(user_id: str, user: dict = Depends(get_current_user)):
     if user["role"] != "client":
         raise HTTPException(status_code=403, detail="Only client can delete users")
+    if user["id"] == user_id:
+        raise HTTPException(status_code=403, detail="You cannot delete your own account")
     result = await db.users.delete_one({"_id": ObjectId(user_id)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
@@ -382,7 +415,6 @@ async def get_projects(user: dict = Depends(get_current_user)):
     result = []
     for p in projects:
         p_data = {"id": str(p["_id"]), **{k: v for k, v in p.items() if k != "_id"}}
-        # Strip full sheet data from list view — just return count
         if "sheets" in p_data:
             p_data["sheet_count"] = len(p_data["sheets"])
             del p_data["sheets"]
@@ -399,7 +431,6 @@ async def get_project(project_id: str, user: dict = Depends(get_current_user)):
         if user["id"] not in member_ids:
             raise HTTPException(status_code=403, detail="No access to this project")
     p_data = {"id": str(project["_id"]), **{k: v for k, v in project.items() if k != "_id"}}
-    # Filter sheets by role
     if user["role"] != "client":
         all_sheets = p_data.get("sheets", [])
         p_data["sheets"] = [
@@ -412,7 +443,6 @@ async def get_project(project_id: str, user: dict = Depends(get_current_user)):
 async def update_project(project_id: str, update: ProjectUpdate, user: dict = Depends(get_current_user)):
     if user["role"] not in ["client", "production_manager"]:
         raise HTTPException(status_code=403, detail="Only client or production manager can update projects")
-
     update_data = {}
     for k, v in update.model_dump().items():
         if v is None:
@@ -424,13 +454,11 @@ async def update_project(project_id: str, update: ProjectUpdate, user: dict = De
                 raise HTTPException(status_code=400, detail="FPS must be 24, 25, or 30")
             update_data[k] = v
         elif k in ["custom_statuses", "removed_statuses", "sheets"]:
-            update_data[k] = v  # store list fields as-is
+            update_data[k] = v
         else:
             update_data[k] = v
-
     if not update_data:
         raise HTTPException(status_code=400, detail="No update data provided")
-
     result = await db.projects.update_one({"_id": ObjectId(project_id)}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -659,7 +687,6 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
     shot = await db.shots.find_one({"_id": ObjectId(shot_id), "project_id": project_id})
     if not shot:
         raise HTTPException(status_code=404, detail="Shot not found")
-
     if user["role"] == "artist":
         if shot.get("assigned_to") != user["id"]:
             raise HTTPException(status_code=403, detail="Not assigned to this shot")
@@ -683,16 +710,12 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
             project = await db.projects.find_one({"_id": ObjectId(project_id)})
             fps = project.get("fps", 25) if project else 25
             update_data["duration_seconds"] = round(update_data["frames"] / fps, 2)
-
     if not update_data:
         raise HTTPException(status_code=400, detail="No update data provided")
-
     update_data["updated_at"] = datetime.now(timezone.utc)
     old_status = shot.get("status")
     old_assigned = shot.get("assigned_to")
-
     await db.shots.update_one({"_id": ObjectId(shot_id)}, {"$set": update_data})
-
     if "status" in update_data and old_status != update_data["status"]:
         if shot.get("assigned_to"):
             await create_notification(shot["assigned_to"], "Shot Status Changed",
@@ -700,14 +723,12 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
                 f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}")
         await log_activity(project_id, user["id"], user["name"], "shot_status_changed",
             f"Shot {shot['shot_id']}: {old_status} → {update_data['status']}")
-
     if "assigned_to" in update_data and old_assigned != update_data["assigned_to"]:
         if update_data["assigned_to"]:
             await create_notification(update_data["assigned_to"], "Shot Assigned",
                 f"You have been assigned to shot {shot['shot_id']}",
                 f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}")
         await log_activity(project_id, user["id"], user["name"], "shot_assigned", f"Assigned shot {shot['shot_id']}")
-
     return {"message": "Shot updated"}
 
 @api_router.delete("/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}")
@@ -866,7 +887,6 @@ async def health_check():
 
 app.include_router(api_router)
 
-# CORS
 cors_origins = os.environ.get("CORS_ORIGINS", "https://toonweaver.vercel.app")
 allow_origins_list = [origin.strip() for origin in cors_origins.split(",")]
 app.add_middleware(CORSMiddleware, allow_origins=allow_origins_list, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
