@@ -44,7 +44,7 @@ class UserRole(str, Enum):
 class ShotStatus(str, Enum):
     YTS = "yts"
     IN_PROGRESS = "in_progress"
-    UPLOADED = "uploaded"
+    FOR_REVIEW = "for_review"       # ← replaces "uploaded"
     INTERNAL_REVIEW = "internal_review"
     RETAKE = "retake"
     HOLD = "hold"
@@ -88,6 +88,7 @@ class ProjectUpdate(BaseModel):
     custom_statuses: Optional[List[dict]] = None
     removed_statuses: Optional[List[str]] = None
     sheets: Optional[List[dict]] = None
+    work_areas: Optional[dict] = None  # {episode_id: {playblast_folder, scene_folder}}
 
 class TeamMemberAdd(BaseModel):
     user_id: str
@@ -123,6 +124,7 @@ class ShotUpdate(BaseModel):
     feedback_link: Optional[str] = None
     playblast_link: Optional[str] = None  # Google Drive .mov link
     scene_link: Optional[str] = None      # Google Drive scene file link
+    uploaded_versions: Optional[List[dict]] = None  # version history
 
 class FileLink(BaseModel):
     name: str
@@ -644,8 +646,8 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
     if user["role"] == "artist":
         if shot.get("assigned_to") != user["id"]:
             raise HTTPException(status_code=403, detail="Not assigned to this shot")
-        if update.status and update.status.value not in ["in_progress", "uploaded"]:
-            raise HTTPException(status_code=403, detail="Artists can only set status to in_progress or uploaded")
+        if update.status and update.status.value not in ["in_progress", "for_review"]:
+    raise HTTPException(status_code=403, detail="Artists can only set status to in_progress or for_review")
         update_data = {}
         if update.status:
             update_data["status"] = update.status.value
