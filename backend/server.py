@@ -42,13 +42,13 @@ class UserRole(str, Enum):
     ARTIST = "artist"
 
 class ShotStatus(str, Enum):
-    YTS = "yts"
-    IN_PROGRESS = "in_progress"
-    FOR_REVIEW = "for_review"       # ← replaces "uploaded"
-    INTERNAL_REVIEW = "internal_review"
-    RETAKE = "retake"
-    HOLD = "hold"
-    APPROVED = "approved"
+    YTS = "yts"                          # Yet To Start
+    IN_PROGRESS = "in_progress"          # Artist working on it
+    FOR_REVIEW = "for_review"            # Artist submitted — supervisor notified
+    INTERNAL_REVIEW = "internal_review"  # Under supervisor review
+    RETAKE = "retake"                    # Needs redo
+    HOLD = "hold"                        # On hold
+    APPROVED = "approved"                # Final approved
 
 class ShotComplexity(str, Enum):
     A = "A"
@@ -88,7 +88,7 @@ class ProjectUpdate(BaseModel):
     custom_statuses: Optional[List[dict]] = None
     removed_statuses: Optional[List[str]] = None
     sheets: Optional[List[dict]] = None
-    work_areas: Optional[dict] = None  # {episode_id: {playblast_folder, scene_folder}}
+    work_areas: Optional[dict] = None   # {episode_id: {playblast_folder, scene_folder}}
 
 class TeamMemberAdd(BaseModel):
     user_id: str
@@ -110,8 +110,8 @@ class ShotCreate(BaseModel):
     frames: Optional[int] = None
     approved_layout_version: Optional[str] = ""
     deadline: Optional[datetime] = None
-    playblast_link: Optional[str] = ""   # Google Drive .mov link
-    scene_link: Optional[str] = ""       # Google Drive scene file link
+    playblast_link: Optional[str] = ""
+    scene_link: Optional[str] = ""
 
 class ShotUpdate(BaseModel):
     description: Optional[str] = None
@@ -122,9 +122,9 @@ class ShotUpdate(BaseModel):
     status: Optional[ShotStatus] = None
     assigned_to: Optional[str] = None
     feedback_link: Optional[str] = None
-    playblast_link: Optional[str] = None  # Google Drive .mov link
-    scene_link: Optional[str] = None      # Google Drive scene file link
-    uploaded_versions: Optional[List[dict]] = None  # version history
+    playblast_link: Optional[str] = None
+    scene_link: Optional[str] = None
+    uploaded_versions: Optional[List[dict]] = None  # version history of uploads
 
 class FileLink(BaseModel):
     name: str
@@ -357,6 +357,7 @@ async def create_project(project: ProjectCreate, user: dict = Depends(get_curren
         "thumbnail_url": project.thumbnail_url or "", "fps": project.fps,
         "drive_links": [link.model_dump() for link in project.drive_links] if project.drive_links else [],
         "custom_statuses": [], "removed_statuses": [], "sheets": [],
+        "work_areas": {},
         "created_by": user["id"],
         "team_members": [{"user_id": user["id"], "role": user["role"]}],
         "created_at": datetime.now(timezone.utc)
@@ -410,7 +411,7 @@ async def update_project(project_id: str, update: ProjectUpdate, user: dict = De
             if v not in [24, 25, 30]:
                 raise HTTPException(status_code=400, detail="FPS must be 24, 25, or 30")
             update_data[k] = v
-        elif k in ["custom_statuses", "removed_statuses", "sheets"]:
+        elif k in ["custom_statuses", "removed_statuses", "sheets", "work_areas"]:
             update_data[k] = v
         else:
             update_data[k] = v
@@ -552,8 +553,9 @@ async def create_shot(project_id: str, episode_id: str, shot: ShotCreate, user: 
         "approved_layout_version": shot.approved_layout_version or "",
         "deadline": shot.deadline, "status": ShotStatus.YTS.value,
         "assigned_to": None, "feedback_link": "",
-        "playblast_link": shot.playblast_link or "",  # Google Drive .mov
-        "scene_link": shot.scene_link or "",          # Google Drive scene file
+        "playblast_link": shot.playblast_link or "",
+        "scene_link": shot.scene_link or "",
+        "uploaded_versions": [],
         "file_links": [], "created_by": user["id"],
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc)
@@ -564,9 +566,8 @@ async def create_shot(project_id: str, episode_id: str, shot: ShotCreate, user: 
 
 @api_router.get("/projects/{project_id}/episodes/{episode_id}/shots")
 async def get_shots(project_id: str, episode_id: str, status: Optional[str] = None, user: dict = Depends(get_current_user)):
+    # Artists see ALL shots in the episode (not just assigned)
     query = {"project_id": project_id, "episode_id": episode_id}
-    if user["role"] == "artist":
-        query["assigned_to"] = user["id"]
     if status:
         query["status"] = status
     shots = await db.shots.find(query).sort("shot_number", 1).to_list(1000)
@@ -580,7 +581,7 @@ async def get_shots(project_id: str, episode_id: str, status: Optional[str] = No
         shot_data = {"id": str(s["_id"]), **{k: v for k, v in s.items() if k != "_id"}}
         if s.get("assigned_to"):
             shot_data["assigned_to_name"] = user_map.get(s["assigned_to"], "Unknown")
-        # Hide scene_link from non-assigned artists
+        # Hide scene_link from artists not assigned to this shot
         if user["role"] == "artist" and s.get("assigned_to") != user["id"]:
             shot_data["scene_link"] = ""
         result.append(shot_data)
@@ -589,8 +590,6 @@ async def get_shots(project_id: str, episode_id: str, status: Optional[str] = No
 @api_router.get("/projects/{project_id}/shots")
 async def get_all_project_shots(project_id: str, status: Optional[str] = None, user: dict = Depends(get_current_user)):
     query = {"project_id": project_id}
-    if user["role"] == "artist":
-        query["assigned_to"] = user["id"]
     if status:
         query["status"] = status
     shots = await db.shots.find(query).sort([("episode_code", 1), ("shot_number", 1)]).to_list(1000)
@@ -633,7 +632,6 @@ async def get_shot(project_id: str, episode_id: str, shot_id: str, user: dict = 
     if shot.get("assigned_to"):
         assigned_user = await db.users.find_one({"_id": ObjectId(shot["assigned_to"])}, {"name": 1})
         shot_data["assigned_to_name"] = assigned_user["name"] if assigned_user else "Unknown"
-    # Hide scene_link from artists not assigned to this shot
     if user["role"] == "artist" and shot.get("assigned_to") != user["id"]:
         shot_data["scene_link"] = ""
     return shot_data
@@ -643,14 +641,25 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
     shot = await db.shots.find_one({"_id": ObjectId(shot_id), "project_id": project_id})
     if not shot:
         raise HTTPException(status_code=404, detail="Shot not found")
+
     if user["role"] == "artist":
+        # Artist must be assigned to update
         if shot.get("assigned_to") != user["id"]:
             raise HTTPException(status_code=403, detail="Not assigned to this shot")
+        # Artist can set status to in_progress or for_review only
         if update.status and update.status.value not in ["in_progress", "for_review"]:
-    raise HTTPException(status_code=403, detail="Artists can only set status to in_progress or for_review")
+            raise HTTPException(status_code=403, detail="Artists can only set status to in_progress or for_review")
         update_data = {}
         if update.status:
             update_data["status"] = update.status.value
+        # Artist can update playblast_link, scene_link, uploaded_versions when submitting
+        if update.playblast_link is not None:
+            update_data["playblast_link"] = update.playblast_link
+        if update.scene_link is not None:
+            update_data["scene_link"] = update.scene_link
+        if update.uploaded_versions is not None:
+            update_data["uploaded_versions"] = update.uploaded_versions
+
     elif user["role"] == "supervisor":
         allowed_fields = ["status", "assigned_to", "feedback_link", "approved_layout_version", "playblast_link", "scene_link"]
         update_data = {}
@@ -658,6 +667,7 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
             if v is not None and k in allowed_fields:
                 update_data[k] = v.value if isinstance(v, Enum) else v
     else:
+        # Client and PM can update everything
         update_data = {}
         for k, v in update.model_dump().items():
             if v is not None:
@@ -666,25 +676,68 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
             project = await db.projects.find_one({"_id": ObjectId(project_id)})
             fps = project.get("fps", 25) if project else 25
             update_data["duration_seconds"] = round(update_data["frames"] / fps, 2)
+
     if not update_data:
         raise HTTPException(status_code=400, detail="No update data provided")
+
     update_data["updated_at"] = datetime.now(timezone.utc)
     old_status = shot.get("status")
     old_assigned = shot.get("assigned_to")
+
     await db.shots.update_one({"_id": ObjectId(shot_id)}, {"$set": update_data})
+
+    # ---- Notifications on status change ----
     if "status" in update_data and old_status != update_data["status"]:
-        if shot.get("assigned_to"):
-            await create_notification(shot["assigned_to"], "Shot Status Changed",
-                f"Shot {shot['shot_id']} status changed to {update_data['status']}",
-                f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}")
+        new_status = update_data["status"]
+
+        # When artist submits for review → notify ALL supervisors on the project
+        if new_status == "for_review":
+            project_doc = await db.projects.find_one({"_id": ObjectId(project_id)})
+            if project_doc:
+                supervisor_ids = [
+                    m["user_id"] for m in project_doc.get("team_members", [])
+                    if m["role"] == "supervisor"
+                ]
+                for sup_id in supervisor_ids:
+                    await create_notification(
+                        sup_id,
+                        "Shot Ready for Review",
+                        f"{shot['shot_id']} has been submitted for review by {user['name']}",
+                        f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}"
+                    )
+                # Also notify client
+                client_members = [m["user_id"] for m in project_doc.get("team_members", []) if m["role"] == "client"]
+                for c_id in client_members:
+                    await create_notification(
+                        c_id,
+                        "Shot Ready for Review",
+                        f"{shot['shot_id']} submitted for review",
+                        f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}"
+                    )
+
+        # Notify assigned artist of any status change
+        if shot.get("assigned_to") and shot["assigned_to"] != user["id"]:
+            await create_notification(
+                shot["assigned_to"],
+                "Shot Status Changed",
+                f"Shot {shot['shot_id']} status changed to {new_status.replace('_', ' ')}",
+                f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}"
+            )
+
         await log_activity(project_id, user["id"], user["name"], "shot_status_changed",
-            f"Shot {shot['shot_id']}: {old_status} → {update_data['status']}")
+            f"Shot {shot['shot_id']}: {old_status} → {new_status}")
+
+    # ---- Notifications on assignment ----
     if "assigned_to" in update_data and old_assigned != update_data["assigned_to"]:
         if update_data["assigned_to"]:
-            await create_notification(update_data["assigned_to"], "Shot Assigned",
+            await create_notification(
+                update_data["assigned_to"],
+                "Shot Assigned",
                 f"You have been assigned to shot {shot['shot_id']}",
-                f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}")
+                f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}"
+            )
         await log_activity(project_id, user["id"], user["name"], "shot_assigned", f"Assigned shot {shot['shot_id']}")
+
     return {"message": "Shot updated"}
 
 @api_router.delete("/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}")
