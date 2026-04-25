@@ -174,14 +174,22 @@ export default function ProjectDetailPage() {
             // Init work area form from saved data
             if (projectRes.data?.work_areas) setWorkAreaForm(projectRes.data.work_areas);
 
-            if (canManageProjects || isSupervisor || canAssignShots || isArtist) {
-                const [usersRes, activityRes] = await Promise.all([
-                    getUsers(),
-                    getActivityLog(projectId),
-                ]);
-                setAllUsers(Array.isArray(usersRes.data) ? usersRes.data : []);
-                setActivityLog(Array.isArray(activityRes.data) ? activityRes.data : []);
-            }
+            if (canManageProjects || isSupervisor || canAssignShots) {
+    const [usersRes, activityRes] = await Promise.all([
+        getUsers(),
+        getActivityLog(projectId),
+    ]);
+    setAllUsers(Array.isArray(usersRes.data) ? usersRes.data : []);
+    setActivityLog(Array.isArray(activityRes.data) ? activityRes.data : []);
+} else if (isArtist) {
+    // Artists only need activity log, not users list
+    try {
+        const activityRes = await getActivityLog(projectId);
+        setActivityLog(Array.isArray(activityRes.data) ? activityRes.data : []);
+    } catch {
+        // Ignore — artists may not have activity access
+    }
+}
         } catch {
             toast.error('Failed to load project');
             navigate('/projects');
