@@ -567,6 +567,7 @@ async def create_shot(project_id: str, episode_id: str, shot: ShotCreate, user: 
 @api_router.get("/projects/{project_id}/episodes/{episode_id}/shots")
 async def get_shots(project_id: str, episode_id: str, status: Optional[str] = None, user: dict = Depends(get_current_user)):
     # Artists see ALL shots in the episode (not just assigned)
+    # scene_link is hidden for non-assigned artists (handled below)
     query = {"project_id": project_id, "episode_id": episode_id}
     if status:
         query["status"] = status
@@ -646,7 +647,7 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
         # Artist must be assigned to update
         if shot.get("assigned_to") != user["id"]:
             raise HTTPException(status_code=403, detail="Not assigned to this shot")
-        # Artist can set status to in_progress or for_review only
+        # Artist can only set status to in_progress or for_review
         if update.status and update.status.value not in ["in_progress", "for_review"]:
             raise HTTPException(status_code=403, detail="Artists can only set status to in_progress or for_review")
         update_data = {}
@@ -690,7 +691,7 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
     if "status" in update_data and old_status != update_data["status"]:
         new_status = update_data["status"]
 
-        # When artist submits for review → notify ALL supervisors on the project
+        # When status changes to for_review → notify ALL supervisors + client on the project
         if new_status == "for_review":
             project_doc = await db.projects.find_one({"_id": ObjectId(project_id)})
             if project_doc:
@@ -706,7 +707,10 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
                         f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}"
                     )
                 # Also notify client
-                client_members = [m["user_id"] for m in project_doc.get("team_members", []) if m["role"] == "client"]
+                client_members = [
+                    m["user_id"] for m in project_doc.get("team_members", [])
+                    if m["role"] == "client"
+                ]
                 for c_id in client_members:
                     await create_notification(
                         c_id,
@@ -715,7 +719,7 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
                         f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}"
                     )
 
-        # Notify assigned artist of any status change
+        # Notify assigned artist of any status change (if someone else changed it)
         if shot.get("assigned_to") and shot["assigned_to"] != user["id"]:
             await create_notification(
                 shot["assigned_to"],
