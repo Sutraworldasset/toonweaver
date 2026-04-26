@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API = 'https://toonweaver-production.up.railway.app/api';
+const API = 'https://api.toonweaver.space/api';
 const api = axios.create({
     baseURL: API,
     withCredentials: true,
