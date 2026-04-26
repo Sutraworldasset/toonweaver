@@ -94,38 +94,49 @@ export default function DashboardPage() {
     ];
 
     const statusCards = [
-        {
-            label: 'Approved',
-            value: stats?.status_counts?.approved || 0,
-            icon: CheckCircle,
-            color: 'text-emerald-500',
-        },
-        {
-            label: 'In Progress',
-            value: stats?.status_counts?.in_progress || 0,
-            icon: Clock,
-            color: 'text-amber-400',
-        },
-        {
-            label: 'Submitted',
-            value: stats?.status_counts?.submitted || 0,
-            icon: Send,
-            color: 'text-blue-400',
-        },
-        {
-            label: 'Retake',
-            value: stats?.status_counts?.retake || 0,
-            icon: AlertTriangle,
-            color: 'text-red-400',
-        },
-        {
-            label: 'Not Started',
-            value: stats?.status_counts?.not_started || 0,
-            icon: Pause,
-            color: 'text-zinc-400',
-        },
-    ];
-
+    {
+        label: 'Approved',
+        value: stats?.status_counts?.approved || 0,
+        icon: CheckCircle,
+        color: 'text-emerald-500',
+    },
+    {
+        label: 'In Progress',
+        value: stats?.status_counts?.in_progress || 0,
+        icon: Clock,
+        color: 'text-blue-400',
+    },
+    {
+        label: 'For Review',
+        value: stats?.status_counts?.for_review || 0,
+        icon: Send,
+        color: 'text-purple-400',
+    },
+    {
+        label: 'Internal Review',
+        value: stats?.status_counts?.internal_review || 0,
+        icon: AlertTriangle,
+        color: 'text-amber-400',
+    },
+    {
+        label: 'Retake',
+        value: stats?.status_counts?.retake || 0,
+        icon: AlertTriangle,
+        color: 'text-red-400',
+    },
+    {
+        label: 'Hold',
+        value: stats?.status_counts?.hold || 0,
+        icon: Pause,
+        color: 'text-orange-400',
+    },
+    {
+        label: 'YTS',
+        value: stats?.status_counts?.yts || 0,
+        icon: Pause,
+        color: 'text-zinc-400',
+    },
+];
     return (
         <div className="space-y-6">
             {/* Welcome Header */}
@@ -281,7 +292,7 @@ export default function DashboardPage() {
                             <p>No projects yet</p>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
                             {projects.slice(0, 6).map((project) => (
                                 <div
                                     key={project.id}
