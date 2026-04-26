@@ -42,13 +42,13 @@ class UserRole(str, Enum):
     ARTIST = "artist"
 
 class ShotStatus(str, Enum):
-    YTS = "yts"                          # Yet To Start
-    IN_PROGRESS = "in_progress"          # Artist working on it
-    FOR_REVIEW = "for_review"            # Artist submitted — supervisor notified
-    INTERNAL_REVIEW = "internal_review"  # Under supervisor review
-    RETAKE = "retake"                    # Needs redo
-    HOLD = "hold"                        # On hold
-    APPROVED = "approved"                # Final approved
+    YTS = "yts"
+    IN_PROGRESS = "in_progress"
+    FOR_REVIEW = "for_review"
+    INTERNAL_REVIEW = "internal_review"
+    RETAKE = "retake"
+    HOLD = "hold"
+    APPROVED = "approved"
 
 class ShotComplexity(str, Enum):
     A = "A"
@@ -124,7 +124,7 @@ class ShotUpdate(BaseModel):
     feedback_link: Optional[str] = None
     playblast_link: Optional[str] = None
     scene_link: Optional[str] = None
-    uploaded_versions: Optional[List[dict]] = None  # version history of uploads
+    uploaded_versions: Optional[List[dict]] = None
 
 class FileLink(BaseModel):
     name: str
@@ -133,7 +133,9 @@ class FileLink(BaseModel):
 
 class FeedbackCreate(BaseModel):
     comment: str
-    attachments: Optional[List[FileLink]] = []
+    # attachments accepts both FileLink-style dicts and annotation dicts (with base64 url)
+    attachments: Optional[List[dict]] = []
+    frame_number: Optional[int] = None  # frame number for annotations
 
 # ============== PASSWORD UTILS ==============
 def hash_password(password: str) -> str:
@@ -566,8 +568,7 @@ async def create_shot(project_id: str, episode_id: str, shot: ShotCreate, user: 
 
 @api_router.get("/projects/{project_id}/episodes/{episode_id}/shots")
 async def get_shots(project_id: str, episode_id: str, status: Optional[str] = None, user: dict = Depends(get_current_user)):
-    # Artists see ALL shots in the episode (not just assigned)
-    # scene_link is hidden for non-assigned artists (handled below)
+    # Artists see ALL shots (scene_link hidden for non-assigned)
     query = {"project_id": project_id, "episode_id": episode_id}
     if status:
         query["status"] = status
@@ -582,7 +583,6 @@ async def get_shots(project_id: str, episode_id: str, status: Optional[str] = No
         shot_data = {"id": str(s["_id"]), **{k: v for k, v in s.items() if k != "_id"}}
         if s.get("assigned_to"):
             shot_data["assigned_to_name"] = user_map.get(s["assigned_to"], "Unknown")
-        # Hide scene_link from artists not assigned to this shot
         if user["role"] == "artist" and s.get("assigned_to") != user["id"]:
             shot_data["scene_link"] = ""
         result.append(shot_data)
@@ -644,16 +644,13 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
         raise HTTPException(status_code=404, detail="Shot not found")
 
     if user["role"] == "artist":
-        # Artist must be assigned to update
         if shot.get("assigned_to") != user["id"]:
             raise HTTPException(status_code=403, detail="Not assigned to this shot")
-        # Artist can only set status to in_progress or for_review
         if update.status and update.status.value not in ["in_progress", "for_review"]:
             raise HTTPException(status_code=403, detail="Artists can only set status to in_progress or for_review")
         update_data = {}
         if update.status:
             update_data["status"] = update.status.value
-        # Artist can update playblast_link, scene_link, uploaded_versions when submitting
         if update.playblast_link is not None:
             update_data["playblast_link"] = update.playblast_link
         if update.scene_link is not None:
@@ -668,7 +665,6 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
             if v is not None and k in allowed_fields:
                 update_data[k] = v.value if isinstance(v, Enum) else v
     else:
-        # Client and PM can update everything
         update_data = {}
         for k, v in update.model_dump().items():
             if v is not None:
@@ -687,39 +683,24 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
 
     await db.shots.update_one({"_id": ObjectId(shot_id)}, {"$set": update_data})
 
-    # ---- Notifications on status change ----
     if "status" in update_data and old_status != update_data["status"]:
         new_status = update_data["status"]
 
-        # When status changes to for_review → notify ALL supervisors + client on the project
+        # When status → for_review: notify all supervisors + client on project
         if new_status == "for_review":
             project_doc = await db.projects.find_one({"_id": ObjectId(project_id)})
             if project_doc:
-                supervisor_ids = [
-                    m["user_id"] for m in project_doc.get("team_members", [])
-                    if m["role"] == "supervisor"
-                ]
-                for sup_id in supervisor_ids:
-                    await create_notification(
-                        sup_id,
-                        "Shot Ready for Review",
-                        f"{shot['shot_id']} has been submitted for review by {user['name']}",
-                        f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}"
-                    )
-                # Also notify client
-                client_members = [
-                    m["user_id"] for m in project_doc.get("team_members", [])
-                    if m["role"] == "client"
-                ]
-                for c_id in client_members:
-                    await create_notification(
-                        c_id,
-                        "Shot Ready for Review",
-                        f"{shot['shot_id']} submitted for review",
-                        f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}"
-                    )
+                notify_roles = ["supervisor", "client"]
+                for member in project_doc.get("team_members", []):
+                    if member["role"] in notify_roles and member["user_id"] != user["id"]:
+                        await create_notification(
+                            member["user_id"],
+                            "Shot Ready for Review",
+                            f"{shot['shot_id']} submitted for review by {user['name']}",
+                            f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}"
+                        )
 
-        # Notify assigned artist of any status change (if someone else changed it)
+        # Notify assigned artist of any other status change
         if shot.get("assigned_to") and shot["assigned_to"] != user["id"]:
             await create_notification(
                 shot["assigned_to"],
@@ -731,7 +712,6 @@ async def update_shot(project_id: str, episode_id: str, shot_id: str, update: Sh
         await log_activity(project_id, user["id"], user["name"], "shot_status_changed",
             f"Shot {shot['shot_id']}: {old_status} → {new_status}")
 
-    # ---- Notifications on assignment ----
     if "assigned_to" in update_data and old_assigned != update_data["assigned_to"]:
         if update_data["assigned_to"]:
             await create_notification(
@@ -774,23 +754,37 @@ async def add_file_link(project_id: str, episode_id: str, shot_id: str, file: Fi
 
 # ============== FEEDBACK ROUTES ==============
 @api_router.post("/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}/feedback")
-async def create_feedback(project_id: str, episode_id: str, shot_id: str, feedback: FeedbackCreate, user: dict = Depends(get_current_user)):
+async def create_feedback(
+    project_id: str, episode_id: str, shot_id: str,
+    feedback: FeedbackCreate, user: dict = Depends(get_current_user)
+):
     shot = await db.shots.find_one({"_id": ObjectId(shot_id), "project_id": project_id})
     if not shot:
         raise HTTPException(status_code=404, detail="Shot not found")
+
+    # attachments are stored as-is (dicts) — supports both links and base64 annotations
     feedback_doc = {
         "project_id": project_id, "episode_id": episode_id, "shot_id": shot_id,
         "user_id": user["id"], "user_name": user["name"], "user_role": user["role"],
         "comment": feedback.comment,
-        "attachments": [a.model_dump() for a in feedback.attachments] if feedback.attachments else [],
+        "attachments": feedback.attachments or [],   # list of dicts — could be links or annotations
+        "frame_number": feedback.frame_number,        # frame number for annotation context
         "created_at": datetime.now(timezone.utc)
     }
     result = await db.feedback.insert_one(feedback_doc)
+
+    # Notify assigned artist of new feedback (if someone else posted it)
     if shot.get("assigned_to") and shot["assigned_to"] != user["id"]:
-        await create_notification(shot["assigned_to"], "New Feedback",
+        await create_notification(
+            shot["assigned_to"],
+            "New Feedback",
             f"New feedback on shot {shot['shot_id']}",
-            f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}")
-    await log_activity(project_id, user["id"], user["name"], "feedback_added", f"Added feedback to shot {shot['shot_id']}")
+            f"/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}"
+        )
+
+    await log_activity(project_id, user["id"], user["name"], "feedback_added",
+        f"Added feedback to shot {shot['shot_id']}")
+
     return {"id": str(result.inserted_id), **{k: v for k, v in feedback_doc.items() if k != "_id"}}
 
 @api_router.get("/projects/{project_id}/episodes/{episode_id}/shots/{shot_id}/feedback")
