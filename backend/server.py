@@ -125,6 +125,8 @@ class ShotUpdate(BaseModel):
     playblast_link: Optional[str] = None
     scene_link: Optional[str] = None
     uploaded_versions: Optional[List[dict]] = None
+    approval_checklist: Optional[dict] = None
+    resolved_comments: Optional[List[str]] = None
 
 class FileLink(BaseModel):
     name: str
@@ -558,6 +560,8 @@ async def create_shot(project_id: str, episode_id: str, shot: ShotCreate, user: 
         "playblast_link": shot.playblast_link or "",
         "scene_link": shot.scene_link or "",
         "uploaded_versions": [],
+        "approval_checklist": {},
+        "resolved_comments": [],
         "file_links": [], "created_by": user["id"],
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc)
