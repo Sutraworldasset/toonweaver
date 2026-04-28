@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { getShot, getFeedback, createFeedback, updateShot } from '../lib/api';
@@ -8,24 +8,19 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
+    Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../components/ui/select';
 import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
+    Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '../components/ui/dialog';
 import {
     ArrowLeft, Send, Paperclip, FileVideo, FileText,
     Calendar, User, Clock, ExternalLink, Plus, Play,
     Download, Edit, X, Film, Tag, Pencil, Square,
     ArrowRight, Minus, RotateCcw, Camera, Check,
-    ZoomIn, Circle, Type, Eraser,
+    Circle, Eraser, ChevronLeft, ChevronRight,
+    CheckCircle2, XCircle, SplitSquareHorizontal,
+    History, MessageSquare, CheckCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -44,22 +39,32 @@ function getDriveDownload(url) { const id = extractDriveFileId(url); return id ?
 // ============ CONSTANTS ============
 const COMPLEXITY_COLORS = { A: '#22c55e', B: '#f59e0b', C: '#ef4444' };
 const DEFAULT_STATUSES = [
-    { value: 'yts', label: 'YTS', color: '#71717a' },
-    { value: 'in_progress', label: 'In Progress', color: '#3b82f6' },
-    { value: 'for_review', label: 'For Review', color: '#a855f7' },
+    { value: 'yts',             label: 'YTS',             color: '#71717a' },
+    { value: 'in_progress',     label: 'In Progress',     color: '#3b82f6' },
+    { value: 'for_review',      label: 'For Review',      color: '#a855f7' },
     { value: 'internal_review', label: 'Internal Review', color: '#f59e0b' },
-    { value: 'retake', label: 'Retake', color: '#ef4444' },
-    { value: 'hold', label: 'Hold', color: '#f97316' },
-    { value: 'approved', label: 'Approved', color: '#22c55e' },
+    { value: 'retake',          label: 'Retake',          color: '#ef4444' },
+    { value: 'hold',            label: 'Hold',            color: '#f97316' },
+    { value: 'approved',        label: 'Approved',        color: '#22c55e' },
 ];
+
+// ============ DEFAULT APPROVAL CHECKLIST ============
+const DEFAULT_CHECKLIST = [
+    { id: 'layout',    label: 'Layout' },
+    { id: 'animation', label: 'Animation' },
+    { id: 'cleanup',   label: 'Cleanup' },
+    { id: 'lighting',  label: 'Lighting' },
+    { id: 'render',    label: 'Render' },
+];
+
 const DRAW_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ffffff', '#000000'];
 const DRAW_TOOLS = [
-    { id: 'pen', icon: Pencil, label: 'Pen' },
-    { id: 'arrow', icon: ArrowRight, label: 'Arrow' },
-    { id: 'rect', icon: Square, label: 'Rectangle' },
-    { id: 'circle', icon: Circle, label: 'Circle' },
-    { id: 'line', icon: Minus, label: 'Line' },
-    { id: 'eraser', icon: Eraser, label: 'Eraser' },
+    { id: 'pen',    icon: Pencil,     label: 'Pen' },
+    { id: 'arrow',  icon: ArrowRight, label: 'Arrow' },
+    { id: 'rect',   icon: Square,     label: 'Rectangle' },
+    { id: 'circle', icon: Circle,     label: 'Circle' },
+    { id: 'line',   icon: Minus,      label: 'Line' },
+    { id: 'eraser', icon: Eraser,     label: 'Eraser' },
 ];
 
 function StatusBadgeCustom({ status, statuses }) {
@@ -73,7 +78,7 @@ function StatusBadgeCustom({ status, statuses }) {
     );
 }
 
-// ============ ANNOTATION CANVAS COMPONENT ============
+// ============ ANNOTATION CANVAS ============
 function AnnotationCanvas({ imageData, onSave, onCancel, fps = 25, frameNumber = 0 }) {
     const canvasRef = useRef(null);
     const [tool, setTool] = useState('pen');
@@ -110,18 +115,12 @@ function AnnotationCanvas({ imageData, onSave, onCancel, fps = 25, frameNumber =
         return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
     };
 
-    const redrawBase = (ctx) => {
-        if (imgRef.current) ctx.drawImage(imgRef.current, 0, 0);
-    };
-
     const drawShape = (ctx, tool, start, end, color, size, path) => {
         ctx.strokeStyle = tool === 'eraser' ? '#000' : color;
         ctx.lineWidth = size;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        if (tool === 'eraser') ctx.globalCompositeOperation = 'destination-out';
-        else ctx.globalCompositeOperation = 'source-over';
-
+        ctx.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
         ctx.beginPath();
         if (tool === 'pen' || tool === 'eraser') {
             if (path.length < 2) return;
@@ -129,23 +128,15 @@ function AnnotationCanvas({ imageData, onSave, onCancel, fps = 25, frameNumber =
             path.forEach(p => ctx.lineTo(p.x, p.y));
             ctx.stroke();
         } else if (tool === 'line') {
-            ctx.moveTo(start.x, start.y);
-            ctx.lineTo(end.x, end.y);
-            ctx.stroke();
+            ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
         } else if (tool === 'rect') {
             ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
         } else if (tool === 'circle') {
-            const rx = Math.abs(end.x - start.x) / 2;
-            const ry = Math.abs(end.y - start.y) / 2;
-            const cx = start.x + (end.x - start.x) / 2;
-            const cy = start.y + (end.y - start.y) / 2;
-            ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+            const rx = Math.abs(end.x - start.x) / 2, ry = Math.abs(end.y - start.y) / 2;
+            ctx.ellipse(start.x + (end.x - start.x) / 2, start.y + (end.y - start.y) / 2, rx, ry, 0, 0, Math.PI * 2);
             ctx.stroke();
         } else if (tool === 'arrow') {
-            ctx.moveTo(start.x, start.y);
-            ctx.lineTo(end.x, end.y);
-            ctx.stroke();
-            // Arrowhead
+            ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
             const angle = Math.atan2(end.y - start.y, end.x - start.x);
             const headLen = 15 + size * 2;
             ctx.beginPath();
@@ -158,14 +149,7 @@ function AnnotationCanvas({ imageData, onSave, onCancel, fps = 25, frameNumber =
         ctx.globalCompositeOperation = 'source-over';
     };
 
-    const handleMouseDown = (e) => {
-        e.preventDefault();
-        const pos = getPos(e);
-        setDrawing(true);
-        setStartPos(pos);
-        setCurrentPath([pos]);
-    };
-
+    const handleMouseDown = (e) => { e.preventDefault(); const pos = getPos(e); setDrawing(true); setStartPos(pos); setCurrentPath([pos]); };
     const handleMouseMove = (e) => {
         e.preventDefault();
         if (!drawing) return;
@@ -174,18 +158,9 @@ function AnnotationCanvas({ imageData, onSave, onCancel, fps = 25, frameNumber =
         const pos = getPos(e);
         const newPath = [...currentPath, pos];
         setCurrentPath(newPath);
-
-        if (tool === 'pen' || tool === 'eraser') {
-            // Restore last saved state
-            if (history.length > 0) ctx.putImageData(history[history.length - 1], 0, 0);
-            drawShape(ctx, tool, startPos, pos, color, brushSize, newPath);
-        } else {
-            // For shapes, restore base + redraw shape preview
-            if (history.length > 0) ctx.putImageData(history[history.length - 1], 0, 0);
-            drawShape(ctx, tool, startPos, pos, color, brushSize, newPath);
-        }
+        if (history.length > 0) ctx.putImageData(history[history.length - 1], 0, 0);
+        drawShape(ctx, tool, startPos, pos, color, brushSize, newPath);
     };
-
     const handleMouseUp = (e) => {
         e.preventDefault();
         if (!drawing) return;
@@ -194,10 +169,8 @@ function AnnotationCanvas({ imageData, onSave, onCancel, fps = 25, frameNumber =
         const pos = getPos(e);
         drawShape(ctx, tool, startPos, pos, color, brushSize, currentPath);
         setHistory(prev => [...prev, ctx.getImageData(0, 0, canvas.width, canvas.height)]);
-        setDrawing(false);
-        setCurrentPath([]);
+        setDrawing(false); setCurrentPath([]);
     };
-
     const handleUndo = () => {
         if (history.length <= 1) return;
         const canvas = canvasRef.current;
@@ -207,31 +180,18 @@ function AnnotationCanvas({ imageData, onSave, onCancel, fps = 25, frameNumber =
         ctx.putImageData(newHistory[newHistory.length - 1], 0, 0);
     };
 
-    const handleSave = () => {
-        const canvas = canvasRef.current;
-        // Compress to reasonable size
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-        onSave(dataUrl);
-    };
-
     return (
         <div className="flex flex-col gap-3">
-            {/* Toolbar */}
             <div className="flex items-center gap-2 flex-wrap p-2 rounded-lg bg-zinc-800 border border-zinc-700">
-                {/* Tools */}
                 <div className="flex items-center gap-1">
                     {DRAW_TOOLS.map(t => (
-                        <button key={t.id} title={t.label}
-                            onClick={() => setTool(t.id)}
+                        <button key={t.id} title={t.label} onClick={() => setTool(t.id)}
                             className={`p-1.5 rounded transition-colors ${tool === t.id ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700'}`}>
                             <t.icon className="w-4 h-4" />
                         </button>
                     ))}
                 </div>
-
                 <div className="w-px h-6 bg-zinc-700" />
-
-                {/* Colors */}
                 <div className="flex items-center gap-1">
                     {DRAW_COLORS.map(c => (
                         <button key={c} onClick={() => setColor(c)}
@@ -239,53 +199,31 @@ function AnnotationCanvas({ imageData, onSave, onCancel, fps = 25, frameNumber =
                             style={{ backgroundColor: c }} />
                     ))}
                     <input type="color" value={color} onChange={e => setColor(e.target.value)}
-                        className="w-5 h-5 rounded cursor-pointer border-0 bg-transparent" title="Custom color" />
+                        className="w-5 h-5 rounded cursor-pointer border-0 bg-transparent" />
                 </div>
-
                 <div className="w-px h-6 bg-zinc-700" />
-
-                {/* Brush size */}
                 <div className="flex items-center gap-2">
                     <span className="text-xs text-zinc-400">Size</span>
-                    <input type="range" min="1" max="20" value={brushSize}
-                        onChange={e => setBrushSize(parseInt(e.target.value))}
-                        className="w-16 accent-blue-500" />
+                    <input type="range" min="1" max="20" value={brushSize} onChange={e => setBrushSize(parseInt(e.target.value))} className="w-16 accent-blue-500" />
                     <span className="text-xs text-zinc-400 w-4">{brushSize}</span>
                 </div>
-
                 <div className="w-px h-6 bg-zinc-700" />
-
                 <button onClick={handleUndo} className="p-1.5 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700" title="Undo">
                     <RotateCcw className="w-4 h-4" />
                 </button>
             </div>
-
-            {/* Canvas */}
             <div className="relative rounded-lg overflow-hidden bg-black border border-zinc-700 cursor-crosshair">
-                <canvas
-                    ref={canvasRef}
-                    className="w-full block"
-                    style={{ touchAction: 'none' }}
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUp}
-                    onMouseLeave={handleMouseUp}
-                    onTouchStart={handleMouseDown}
-                    onTouchMove={handleMouseMove}
-                    onTouchEnd={handleMouseUp}
-                />
-                {/* Frame number badge */}
+                <canvas ref={canvasRef} className="w-full block" style={{ touchAction: 'none' }}
+                    onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
+                    onTouchStart={handleMouseDown} onTouchMove={handleMouseMove} onTouchEnd={handleMouseUp} />
                 <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 text-xs text-yellow-400 font-mono">
                     Frame {frameNumber} — {(frameNumber / fps).toFixed(2)}s
                 </div>
             </div>
-
-            {/* Actions */}
             <div className="flex gap-2 justify-end">
                 <Button variant="ghost" onClick={onCancel} className="text-zinc-400">Cancel</Button>
-                <Button onClick={handleSave} className="bg-emerald-600 hover:bg-emerald-500">
-                    <Check className="w-4 h-4 mr-2" />
-                    Use Annotation
+                <Button onClick={() => onSave(canvasRef.current.toDataURL('image/jpeg', 0.7))} className="bg-emerald-600 hover:bg-emerald-500">
+                    <Check className="w-4 h-4 mr-2" />Use Annotation
                 </Button>
             </div>
         </div>
@@ -305,17 +243,31 @@ export default function ShotDetailPage() {
     const [submitting, setSubmitting] = useState(false);
     const [saving, setSaving] = useState(false);
 
-    // Video + annotation
+    // Version stacking — Feature 1
+    const [activeVersionIndex, setActiveVersionIndex] = useState(0);
+    const [versionsOpen, setVersionsOpen] = useState(false);
+
+    // Side-by-side comparison — Feature 5
+    const [compareOpen, setCompareOpen] = useState(false);
+    const [compareLeftIndex, setCompareLeftIndex] = useState(0);
+    const [compareRightIndex, setCompareRightIndex] = useState(1);
+
+    // Approval checklist — Feature 4
+    const [checklistOpen, setChecklistOpen] = useState(false);
+    const [checklist, setChecklist] = useState({});
+    const [savingChecklist, setSavingChecklist] = useState(false);
+
+    // Annotation
     const [reviewOpen, setReviewOpen] = useState(false);
     const [annotateMode, setAnnotateMode] = useState(false);
     const [capturedFrame, setCapturedFrame] = useState(null);
-    const [annotation, setAnnotation] = useState(null); // base64 annotated image
+    const [annotation, setAnnotation] = useState(null);
     const [currentFrame, setCurrentFrame] = useState(0);
-    const iframeRef = useRef(null);
 
-    // Simple video player state
+    // Video
     const [videoOpen, setVideoOpen] = useState(false);
     const [videoUrl, setVideoUrl] = useState('');
+    const [videoStartFrame, setVideoStartFrame] = useState(null);
 
     // Edit
     const [editOpen, setEditOpen] = useState(false);
@@ -325,9 +277,10 @@ export default function ShotDetailPage() {
     const [commentText, setCommentText] = useState('');
     const [attachments, setAttachments] = useState([]);
     const [newAttachment, setNewAttachment] = useState({ name: '', url: '' });
-
-    // Enlarged annotation view
     const [enlargedImage, setEnlargedImage] = useState(null);
+
+    // Filter resolved
+    const [showResolved, setShowResolved] = useState(false);
 
     useEffect(() => { loadData(); }, [projectId, episodeId, shotId]);
 
@@ -341,6 +294,12 @@ export default function ShotDetailPage() {
             setFeedback(Array.isArray(feedbackRes.data) ? feedbackRes.data : []);
             const s = shotRes.data;
             setEditForm({ description: s.description || '', complexity: s.complexity || '', frames: s.frames || '', approved_layout_version: s.approved_layout_version || '', feedback_link: s.feedback_link || '', playblast_link: s.playblast_link || '', scene_link: s.scene_link || '' });
+            // Load checklist from shot data
+            if (s.approval_checklist) setChecklist(s.approval_checklist);
+            // Set active version to latest
+            const versions = s.uploaded_versions || [];
+            const playblastVersions = versions.filter(v => v.type === 'playblast');
+            if (playblastVersions.length > 0) setActiveVersionIndex(playblastVersions.length - 1);
         } catch {
             toast.error('Failed to load shot details');
             navigate(`/projects/${projectId}`);
@@ -376,75 +335,82 @@ export default function ShotDetailPage() {
         finally { setSaving(false); }
     };
 
-    // Capture current frame from iframe using html2canvas fallback
-    // Since Google Drive iframe blocks direct canvas capture, we capture the thumbnail
-    // and let supervisor annotate on it, noting the frame number manually
-    const handleCaptureFrame = () => {
-        // Use the playblast thumbnail as base for annotation
-        // Supervisor types in the frame number they want to annotate
-        const thumb = getDriveThumbnail(shot.playblast_link);
-        if (!thumb) {
-            toast.error('No playblast available to annotate');
-            return;
-        }
+    // ============ FEATURE 4 — Approval checklist ============
+    const handleToggleChecklist = async (itemId) => {
+        const updated = { ...checklist, [itemId]: !checklist[itemId] };
+        setChecklist(updated);
+        try {
+            await updateShot(projectId, episodeId, shotId, { approval_checklist: updated });
+        } catch { toast.error('Failed to save checklist'); }
+    };
 
-        // Load thumbnail into a canvas for annotation
+    const allChecked = DEFAULT_CHECKLIST.every(item => checklist[item.id]);
+
+    // ============ FEATURE 2 — Resolve comment ============
+    const handleResolveComment = async (feedbackId, currentResolved) => {
+        try {
+            // We store resolved state in feedback — need a new API endpoint
+            // For now update locally and call createFeedback with a resolve marker
+            // Simple approach: update feedback via a special comment
+            const updatedFeedback = feedback.map(f =>
+                f.id === feedbackId ? { ...f, resolved: !currentResolved } : f
+            );
+            setFeedback(updatedFeedback);
+            // Persist via updateShot storing resolved_comments array
+            const resolvedIds = updatedFeedback.filter(f => f.resolved).map(f => f.id);
+            await updateShot(projectId, episodeId, shotId, { resolved_comments: resolvedIds });
+            toast.success(currentResolved ? 'Comment unresolved' : 'Comment resolved ✅');
+        } catch { toast.error('Failed to resolve comment'); }
+    };
+
+    // ============ FEATURE 3 — Frame jump ============
+    const handleFrameJump = (frameNumber) => {
+        const embedUrl = getDriveEmbed(shot.playblast_link);
+        if (!embedUrl) return;
+        setVideoUrl(embedUrl);
+        setVideoStartFrame(frameNumber);
+        setVideoOpen(true);
+    };
+
+    // ============ Annotation ============
+    const handleCaptureFrame = () => {
+        const thumb = getDriveThumbnail(shot.playblast_link);
+        if (!thumb) { toast.error('No playblast available'); return; }
         const img = new Image();
         img.crossOrigin = 'anonymous';
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            canvas.width = img.width || 640;
-            canvas.height = img.height || 360;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-            setCapturedFrame(dataUrl);
+            canvas.width = img.width || 640; canvas.height = img.height || 360;
+            canvas.getContext('2d').drawImage(img, 0, 0);
+            setCapturedFrame(canvas.toDataURL('image/jpeg', 0.9));
             setAnnotateMode(true);
         };
         img.onerror = () => {
-            // If thumbnail can't be loaded cross-origin, create a blank slate with shot info
             const canvas = document.createElement('canvas');
-            canvas.width = 1280;
-            canvas.height = 720;
+            canvas.width = 1280; canvas.height = 720;
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#18181b';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#3f3f46';
-            ctx.fillRect(0, 0, canvas.width, 2);
-            ctx.fillRect(0, canvas.height - 2, canvas.width, 2);
-            ctx.font = 'bold 32px monospace';
-            ctx.fillStyle = '#71717a';
-            ctx.textAlign = 'center';
-            ctx.fillText(shot.shot_id, canvas.width / 2, canvas.height / 2 - 20);
-            ctx.font = '18px monospace';
-            ctx.fillStyle = '#52525b';
-            ctx.fillText(`Frame ${currentFrame} — Annotation`, canvas.width / 2, canvas.height / 2 + 20);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-            setCapturedFrame(dataUrl);
+            ctx.fillStyle = '#18181b'; ctx.fillRect(0, 0, 1280, 720);
+            ctx.font = 'bold 32px monospace'; ctx.fillStyle = '#71717a'; ctx.textAlign = 'center';
+            ctx.fillText(shot.shot_id, 640, 340);
+            ctx.font = '18px monospace'; ctx.fillStyle = '#52525b';
+            ctx.fillText(`Frame ${currentFrame} — Annotation`, 640, 380);
+            setCapturedFrame(canvas.toDataURL('image/jpeg', 0.9));
             setAnnotateMode(true);
         };
         img.src = thumb;
     };
 
-    const handleAnnotationSave = (annotatedDataUrl) => {
-        setAnnotation(annotatedDataUrl);
-        setAnnotateMode(false);
-        toast.success('Annotation ready — add your comment and submit');
-    };
-
     const handleSubmitFeedback = async (e) => {
         e.preventDefault();
-        if (!commentText.trim() && !annotation) { toast.error('Please enter a comment or add an annotation'); return; }
+        if (!commentText.trim() && !annotation) { toast.error('Please enter a comment or annotation'); return; }
         setSubmitting(true);
         try {
             const feedbackAttachments = [...attachments];
             if (annotation) {
                 feedbackAttachments.push({
                     name: `annotation_frame${currentFrame}_${shot.shot_id}`,
-                    url: annotation,         // base64 stored directly
-                    file_type: 'annotation',
-                    frame: currentFrame,
-                    is_annotation: true,
+                    url: annotation, file_type: 'annotation',
+                    frame: currentFrame, is_annotation: true,
                 });
             }
             await createFeedback(projectId, episodeId, shotId, {
@@ -453,19 +419,10 @@ export default function ShotDetailPage() {
                 frame_number: annotation ? currentFrame : null,
             });
             toast.success('Feedback submitted');
-            setCommentText('');
-            setAttachments([]);
-            setAnnotation(null);
-            setCapturedFrame(null);
+            setCommentText(''); setAttachments([]); setAnnotation(null); setCapturedFrame(null);
             loadData();
         } catch { toast.error('Failed to submit feedback'); }
         finally { setSubmitting(false); }
-    };
-
-    const handleAddAttachment = () => {
-        if (!newAttachment.name || !newAttachment.url) { toast.error('Enter name and URL'); return; }
-        setAttachments([...attachments, { ...newAttachment, file_type: 'link' }]);
-        setNewAttachment({ name: '', url: '' });
     };
 
     if (loading) {
@@ -481,13 +438,30 @@ export default function ShotDetailPage() {
     const isAssignedArtist = isArtist && shot.assigned_to === user?.id;
     const canChangeStatus = canManage || isAssignedArtist;
     const canEdit = isClient || isProductionManager || isSupervisor;
-    const canAnnotate = isClient || isSupervisor; // Only supervisors and client annotate
+    const canAnnotate = isClient || isSupervisor;
+    const canResolve = isClient || isSupervisor || isProductionManager;
 
-    const playblastThumb = getDriveThumbnail(shot.playblast_link);
+    // Version stacking — get all playblast versions
+    const uploadedVersions = shot.uploaded_versions || [];
+    const playblastVersions = uploadedVersions.filter(v => v.type === 'playblast');
+    // Add original playblast as v0 if exists
+    if (shot.playblast_link) {
+        const hasOriginal = playblastVersions.find(v => v.url === shot.playblast_link);
+        if (!hasOriginal) {
+            playblastVersions.unshift({ url: shot.playblast_link, name: 'Original', type: 'playblast', version: 0 });
+        }
+    }
+    const activeVersion = playblastVersions[activeVersionIndex] || { url: shot.playblast_link };
+    const activeThumb = getDriveThumbnail(activeVersion?.url);
+    const activeEmbed = getDriveEmbed(activeVersion?.url);
     const sceneDownload = getDriveDownload(shot.scene_link);
+
     const allStatuses = DEFAULT_STATUSES;
     const artistStatuses = allStatuses.filter(s => ['in_progress', 'for_review'].includes(s.value));
     const statusOptions = isArtist ? artistStatuses : allStatuses;
+
+    const visibleFeedback = showResolved ? feedback : feedback.filter(f => !f.resolved);
+    const resolvedCount = feedback.filter(f => f.resolved).length;
 
     return (
         <div className="space-y-6">
@@ -505,14 +479,27 @@ export default function ShotDetailPage() {
                                 {shot.complexity}
                             </span>
                         )}
+                        {/* Checklist indicator */}
+                        {allChecked && (
+                            <span className="px-2 py-1 rounded text-xs font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
+                                <CheckCheck className="w-3 h-3" /> All checks passed
+                            </span>
+                        )}
                     </div>
                     <p className="text-zinc-400 mt-1">{shot.description || 'No description'}</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                    {/* Approval checklist button — Feature 4 */}
+                    {canResolve && (
+                        <Button variant="outline" onClick={() => setChecklistOpen(true)}
+                            className={`border-zinc-700 text-zinc-300 ${allChecked ? 'border-emerald-500/50 text-emerald-400' : ''}`}>
+                            <CheckCircle2 className="w-4 h-4 mr-2" />
+                            Checklist ({DEFAULT_CHECKLIST.filter(i => checklist[i.id]).length}/{DEFAULT_CHECKLIST.length})
+                        </Button>
+                    )}
                     {canEdit && (
                         <Button variant="outline" onClick={() => setEditOpen(true)} className="border-zinc-700 text-zinc-300">
-                            <Edit className="w-4 h-4 mr-2" />
-                            Edit Shot
+                            <Edit className="w-4 h-4 mr-2" />Edit
                         </Button>
                     )}
                     {canChangeStatus && (
@@ -534,20 +521,60 @@ export default function ShotDetailPage() {
                 {/* Left Column */}
                 <div className="space-y-6">
 
-                    {/* Playblast */}
+                    {/* ============ FEATURE 1 — Version Stacking ============ */}
                     {shot.playblast_link && (
                         <Card className="bg-zinc-900 border-zinc-800">
                             <CardHeader>
-                                <CardTitle className="text-zinc-100 flex items-center gap-2">
-                                    <Film className="w-5 h-5 text-purple-400" />
-                                    Playblast
-                                </CardTitle>
+                                <div className="flex items-center justify-between">
+                                    <CardTitle className="text-zinc-100 flex items-center gap-2">
+                                        <Film className="w-5 h-5 text-purple-400" />
+                                        Playblast
+                                        {playblastVersions.length > 1 && (
+                                            <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-400">
+                                                v{activeVersionIndex + 1}/{playblastVersions.length}
+                                            </span>
+                                        )}
+                                    </CardTitle>
+                                    <div className="flex items-center gap-2">
+                                        {/* Version navigation */}
+                                        {playblastVersions.length > 1 && (
+                                            <div className="flex items-center gap-1">
+                                                <button onClick={() => setActiveVersionIndex(Math.max(0, activeVersionIndex - 1))}
+                                                    disabled={activeVersionIndex === 0}
+                                                    className="p-1 rounded text-zinc-400 hover:text-zinc-100 disabled:opacity-30">
+                                                    <ChevronLeft className="w-4 h-4" />
+                                                </button>
+                                                <button onClick={() => setActiveVersionIndex(Math.min(playblastVersions.length - 1, activeVersionIndex + 1))}
+                                                    disabled={activeVersionIndex === playblastVersions.length - 1}
+                                                    className="p-1 rounded text-zinc-400 hover:text-zinc-100 disabled:opacity-30">
+                                                    <ChevronRight className="w-4 h-4" />
+                                                </button>
+                                                <Button size="sm" variant="ghost" onClick={() => setVersionsOpen(true)}
+                                                    className="text-zinc-400 hover:text-zinc-100 text-xs">
+                                                    <History className="w-3 h-3 mr-1" />
+                                                    All versions
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                {playblastVersions.length > 1 && (
+                                    <p className="text-xs text-zinc-500">
+                                        {playblastVersions[activeVersionIndex]?.name || `Version ${activeVersionIndex + 1}`}
+                                        {playblastVersions[activeVersionIndex]?.uploaded_at && (
+                                            <span className="ml-2">· {format(new Date(playblastVersions[activeVersionIndex].uploaded_at), 'MMM d, HH:mm')}</span>
+                                        )}
+                                        {playblastVersions[activeVersionIndex]?.uploaded_by && (
+                                            <span className="ml-2">by {playblastVersions[activeVersionIndex].uploaded_by}</span>
+                                        )}
+                                    </p>
+                                )}
                             </CardHeader>
                             <CardContent className="space-y-3">
                                 <div className="relative rounded-lg overflow-hidden bg-zinc-800 cursor-pointer group"
-                                    onClick={() => { setVideoUrl(getDriveEmbed(shot.playblast_link)); setVideoOpen(true); }}>
-                                    {playblastThumb ? (
-                                        <img src={playblastThumb} alt={shot.shot_id}
+                                    onClick={() => { setVideoUrl(activeEmbed); setVideoOpen(true); }}>
+                                    {activeThumb ? (
+                                        <img src={activeThumb} alt={shot.shot_id}
                                             className="w-full aspect-video object-cover group-hover:opacity-80 transition-opacity"
                                             onError={e => { e.target.style.display = 'none'; }} />
                                     ) : (
@@ -563,23 +590,42 @@ export default function ShotDetailPage() {
                                 </div>
 
                                 <div className="flex gap-2">
-                                    <Button onClick={() => { setVideoUrl(getDriveEmbed(shot.playblast_link)); setVideoOpen(true); }}
+                                    <Button onClick={() => { setVideoUrl(activeEmbed); setVideoOpen(true); }}
                                         className="flex-1 bg-purple-600 hover:bg-purple-500">
-                                        <Play className="w-4 h-4 mr-2" />
-                                        Play
+                                        <Play className="w-4 h-4 mr-2" />Play
                                     </Button>
+                                    {/* ============ FEATURE 5 — Compare ============ */}
+                                    {playblastVersions.length >= 2 && (
+                                        <Button variant="outline" onClick={() => setCompareOpen(true)}
+                                            className="border-blue-600/50 text-blue-400 hover:bg-blue-500/10">
+                                            <SplitSquareHorizontal className="w-4 h-4 mr-2" />
+                                            Compare
+                                        </Button>
+                                    )}
                                     {canAnnotate && (
-                                        <Button onClick={() => { setReviewOpen(true); }}
+                                        <Button onClick={() => setReviewOpen(true)}
                                             variant="outline" className="border-amber-600/50 text-amber-400 hover:bg-amber-500/10">
                                             <Pencil className="w-4 h-4 mr-2" />
                                             Annotate
                                         </Button>
                                     )}
-                                    <Button variant="outline" onClick={() => window.open(shot.playblast_link, '_blank')}
+                                    <Button variant="outline" onClick={() => window.open(activeVersion?.url || shot.playblast_link, '_blank')}
                                         className="border-zinc-700 text-zinc-300">
                                         <ExternalLink className="w-4 h-4" />
                                     </Button>
                                 </div>
+
+                                {/* Version pills */}
+                                {playblastVersions.length > 1 && (
+                                    <div className="flex gap-1 flex-wrap">
+                                        {playblastVersions.map((v, i) => (
+                                            <button key={i} onClick={() => setActiveVersionIndex(i)}
+                                                className={`px-2 py-0.5 rounded text-xs font-mono transition-colors ${activeVersionIndex === i ? 'bg-purple-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
+                                                v{i + 1}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </CardContent>
                         </Card>
                     )}
@@ -590,11 +636,11 @@ export default function ShotDetailPage() {
                         <CardContent>
                             <div className="grid grid-cols-2 gap-3">
                                 {[
-                                    { icon: Clock, label: 'Frames', value: shot.frames || '-' },
+                                    { label: 'Frames', value: shot.frames || '-' },
                                     { label: 'Duration', value: shot.duration_seconds ? `${shot.duration_seconds}s` : '-' },
-                                    { icon: Tag, label: 'Layout Ver.', value: shot.approved_layout_version || '-' },
-                                    { icon: Calendar, label: 'Deadline', value: shot.deadline ? format(new Date(shot.deadline), 'MMM d, yyyy') : 'Not set' },
-                                    { icon: User, label: 'Artist', value: shot.assigned_to_name || 'Unassigned' },
+                                    { label: 'Layout Ver.', value: shot.approved_layout_version || '-' },
+                                    { label: 'Deadline', value: shot.deadline ? format(new Date(shot.deadline), 'MMM d, yyyy') : 'Not set' },
+                                    { label: 'Artist', value: shot.assigned_to_name || 'Unassigned' },
                                     { label: 'FPS', value: shot.fps || 25 },
                                 ].map((item, i) => (
                                     <div key={i} className="p-3 rounded-lg bg-zinc-800/50">
@@ -604,6 +650,26 @@ export default function ShotDetailPage() {
                                 ))}
                             </div>
 
+                            {/* ============ FEATURE 4 — Checklist summary ============ */}
+                            {canResolve && (
+                                <div className="mt-4 p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
+                                    <p className="text-zinc-400 text-xs mb-2 flex items-center gap-1">
+                                        <CheckCircle2 className="w-3 h-3" /> Approval Checklist
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-1">
+                                        {DEFAULT_CHECKLIST.map(item => (
+                                            <button key={item.id} onClick={() => handleToggleChecklist(item.id)}
+                                                className={`flex items-center gap-2 px-2 py-1 rounded text-xs transition-colors text-left ${checklist[item.id] ? 'text-emerald-400 bg-emerald-500/10' : 'text-zinc-500 hover:text-zinc-300'}`}>
+                                                {checklist[item.id]
+                                                    ? <CheckCircle2 className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                                                    : <Circle className="w-3 h-3 flex-shrink-0" />}
+                                                {item.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             {shot.scene_link && (canManage || isAssignedArtist) && (
                                 <div className="mt-4 p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
                                     <p className="text-zinc-500 text-xs mb-2">Scene File</p>
@@ -611,10 +677,8 @@ export default function ShotDetailPage() {
                                         <FileText className="w-4 h-4 text-amber-400" />
                                         <span className="text-zinc-300 text-sm flex-1 truncate">{shot.shot_id} scene</span>
                                         {sceneDownload && (
-                                            <Button size="sm" onClick={() => window.open(sceneDownload, '_blank')}
-                                                className="bg-amber-600 hover:bg-amber-500">
-                                                <Download className="w-3 h-3 mr-1" />
-                                                Download
+                                            <Button size="sm" onClick={() => window.open(sceneDownload, '_blank')} className="bg-amber-600 hover:bg-amber-500">
+                                                <Download className="w-3 h-3 mr-1" />Download
                                             </Button>
                                         )}
                                         {canManage && (
@@ -629,8 +693,7 @@ export default function ShotDetailPage() {
                                 <div className="mt-3">
                                     <a href={shot.feedback_link} target="_blank" rel="noreferrer"
                                         className="flex items-center gap-2 text-blue-400 hover:text-blue-300 text-sm">
-                                        <ExternalLink className="w-4 h-4" />
-                                        View Feedback Reference
+                                        <ExternalLink className="w-4 h-4" />View Feedback Reference
                                     </a>
                                 </div>
                             )}
@@ -641,86 +704,112 @@ export default function ShotDetailPage() {
                 {/* Right Column - Feedback */}
                 <Card className="bg-zinc-900 border-zinc-800 flex flex-col" style={{ maxHeight: 'calc(100vh - 200px)' }}>
                     <CardHeader>
-                        <CardTitle className="text-zinc-100">Feedback Thread</CardTitle>
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="text-zinc-100">Feedback Thread</CardTitle>
+                            {/* ============ FEATURE 2 — Show resolved toggle ============ */}
+                            <div className="flex items-center gap-2">
+                                {resolvedCount > 0 && (
+                                    <button onClick={() => setShowResolved(!showResolved)}
+                                        className="text-xs text-zinc-500 hover:text-zinc-300 flex items-center gap-1">
+                                        <CheckCheck className="w-3 h-3" />
+                                        {showResolved ? 'Hide' : 'Show'} resolved ({resolvedCount})
+                                    </button>
+                                )}
+                            </div>
+                        </div>
                     </CardHeader>
                     <CardContent className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                        <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-1">
-                            {feedback.length === 0 ? (
+                        <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-1">
+                            {visibleFeedback.length === 0 ? (
                                 <div className="text-center py-8 text-zinc-500">
-                                    <p>No feedback yet</p>
+                                    <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                                    <p>{feedback.length === 0 ? 'No feedback yet' : 'All comments resolved'}</p>
                                     <p className="text-xs mt-1">Start the conversation</p>
                                 </div>
                             ) : (
-                                feedback.map((item) => {
+                                visibleFeedback.map((item) => {
                                     const annotationAtt = item.attachments?.find(a => a.is_annotation);
                                     const otherAtts = item.attachments?.filter(a => !a.is_annotation) || [];
                                     return (
                                         <div key={item.id}
-                                            className={`p-3 rounded-lg ${item.user_id === user?.id ? 'bg-blue-600/10 border border-blue-500/20 ml-4' : 'bg-zinc-800/50 border border-zinc-700 mr-4'}`}>
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <div className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-medium text-zinc-300">
-                                                    {item.user_name?.charAt(0).toUpperCase()}
+                                            className={`p-3 rounded-lg border transition-opacity ${item.resolved ? 'opacity-50' : ''} ${item.user_id === user?.id ? 'bg-blue-600/10 border-blue-500/20 ml-4' : 'bg-zinc-800/50 border-zinc-700 mr-4'}`}>
+                                            <div className="flex items-start gap-2">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                        <div className="w-5 h-5 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-medium text-zinc-300 flex-shrink-0">
+                                                            {item.user_name?.charAt(0).toUpperCase()}
+                                                        </div>
+                                                        <span className="text-xs font-medium text-zinc-200">{item.user_name}</span>
+                                                        <span className="text-xs text-zinc-500 capitalize">({item.user_role?.replace('_', ' ')})</span>
+                                                        {/* ============ FEATURE 3 — Frame badge (clickable) ============ */}
+                                                        {item.frame_number != null && (
+                                                            <button
+                                                                onClick={() => handleFrameJump(item.frame_number)}
+                                                                className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs font-mono hover:bg-amber-500/40 transition-colors flex items-center gap-1"
+                                                                title="Jump to this frame">
+                                                                <Play className="w-2.5 h-2.5" />
+                                                                F{item.frame_number}
+                                                            </button>
+                                                        )}
+                                                        {item.resolved && (
+                                                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-xs flex items-center gap-1">
+                                                                <CheckCheck className="w-3 h-3" /> Resolved
+                                                            </span>
+                                                        )}
+                                                        <span className="text-xs text-zinc-600 ml-auto">
+                                                            {format(new Date(item.created_at), 'MMM d, HH:mm')}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-sm text-zinc-300">{item.comment}</p>
+                                                    {annotationAtt && (
+                                                        <div className="mt-2">
+                                                            <img src={annotationAtt.url} alt="Annotation"
+                                                                className="w-full rounded-lg border border-zinc-600 cursor-pointer hover:opacity-90"
+                                                                onClick={() => setEnlargedImage(annotationAtt.url)} />
+                                                            <p className="text-xs text-zinc-500 mt-1 flex items-center gap-1">
+                                                                <Camera className="w-3 h-3" />
+                                                                Click to enlarge · Frame {annotationAtt.frame}
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                    {otherAtts.length > 0 && (
+                                                        <div className="mt-2 space-y-1">
+                                                            {otherAtts.map((att, i) => (
+                                                                <a key={i} href={att.url} target="_blank" rel="noopener noreferrer"
+                                                                    className="flex items-center gap-2 text-xs text-blue-400 hover:underline">
+                                                                    <Paperclip className="w-3 h-3" />{att.name}
+                                                                </a>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                <span className="text-xs font-medium text-zinc-200">{item.user_name}</span>
-                                                <span className="text-xs text-zinc-500 capitalize">({item.user_role?.replace('_', ' ')})</span>
-                                                {item.frame_number != null && (
-                                                    <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-xs font-mono">
-                                                        F{item.frame_number}
-                                                    </span>
+                                                {/* ============ FEATURE 2 — Resolve button ============ */}
+                                                {canResolve && (
+                                                    <button onClick={() => handleResolveComment(item.id, item.resolved)}
+                                                        title={item.resolved ? 'Unresolve' : 'Mark as resolved'}
+                                                        className={`flex-shrink-0 p-1 rounded transition-colors ${item.resolved ? 'text-emerald-400 hover:text-zinc-400' : 'text-zinc-600 hover:text-emerald-400'}`}>
+                                                        <CheckCircle2 className="w-4 h-4" />
+                                                    </button>
                                                 )}
-                                                <span className="text-xs text-zinc-600 ml-auto">
-                                                    {format(new Date(item.created_at), 'MMM d, HH:mm')}
-                                                </span>
                                             </div>
-                                            <p className="text-sm text-zinc-300">{item.comment}</p>
-
-                                            {/* Annotation thumbnail */}
-                                            {annotationAtt && (
-                                                <div className="mt-2">
-                                                    <img
-                                                        src={annotationAtt.url}
-                                                        alt="Annotation"
-                                                        className="w-full rounded-lg border border-zinc-600 cursor-pointer hover:opacity-90 transition-opacity"
-                                                        onClick={() => setEnlargedImage(annotationAtt.url)}
-                                                    />
-                                                    <p className="text-xs text-zinc-500 mt-1 flex items-center gap-1">
-                                                        <Camera className="w-3 h-3" />
-                                                        Click to enlarge · Frame {annotationAtt.frame}
-                                                    </p>
-                                                </div>
-                                            )}
-
-                                            {/* Other attachments */}
-                                            {otherAtts.length > 0 && (
-                                                <div className="mt-2 space-y-1">
-                                                    {otherAtts.map((att, i) => (
-                                                        <a key={i} href={att.url} target="_blank" rel="noopener noreferrer"
-                                                            className="flex items-center gap-2 text-xs text-blue-400 hover:underline">
-                                                            <Paperclip className="w-3 h-3" />
-                                                            {att.name}
-                                                        </a>
-                                                    ))}
-                                                </div>
-                                            )}
                                         </div>
                                     );
                                 })
                             )}
                         </div>
 
-                        {/* Annotation preview before submit */}
+                        {/* Annotation preview */}
                         {annotation && (
                             <div className="mb-3 p-2 rounded-lg border border-amber-500/40 bg-amber-500/10">
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-xs text-amber-400 flex items-center gap-1">
-                                        <Camera className="w-3 h-3" />
-                                        Annotation attached (Frame {currentFrame})
+                                        <Camera className="w-3 h-3" />Annotation — Frame {currentFrame}
                                     </span>
                                     <button onClick={() => setAnnotation(null)} className="text-zinc-500 hover:text-zinc-300">
                                         <X className="w-4 h-4" />
                                     </button>
                                 </div>
-                                <img src={annotation} alt="Annotation preview" className="w-full rounded border border-zinc-700 cursor-pointer"
+                                <img src={annotation} alt="Preview" className="w-full rounded border border-zinc-700 cursor-pointer"
                                     onClick={() => setEnlargedImage(annotation)} />
                             </div>
                         )}
@@ -731,8 +820,7 @@ export default function ShotDetailPage() {
                                 <div className="flex flex-wrap gap-2">
                                     {attachments.map((att, i) => (
                                         <span key={i} className="inline-flex items-center gap-1 px-2 py-1 bg-zinc-800 rounded text-xs text-zinc-300">
-                                            <Paperclip className="w-3 h-3" />
-                                            {att.name}
+                                            <Paperclip className="w-3 h-3" />{att.name}
                                             <button type="button" onClick={() => setAttachments(attachments.filter((_, idx) => idx !== i))} className="ml-1 text-zinc-500 hover:text-zinc-300">×</button>
                                         </span>
                                     ))}
@@ -745,18 +833,14 @@ export default function ShotDetailPage() {
                                 <Input placeholder="URL" value={newAttachment.url}
                                     onChange={e => setNewAttachment({ ...newAttachment, url: e.target.value })}
                                     className="flex-1 bg-zinc-800/50 border-zinc-700 text-sm" />
-                                <Button type="button" variant="ghost" size="icon" onClick={handleAddAttachment} className="text-zinc-400">
-                                    <Plus className="w-4 h-4" />
-                                </Button>
+                                <Button type="button" variant="ghost" size="icon"
+                                    onClick={() => { if (!newAttachment.name || !newAttachment.url) return; setAttachments([...attachments, { ...newAttachment, file_type: 'link' }]); setNewAttachment({ name: '', url: '' }); }}
+                                    className="text-zinc-400"><Plus className="w-4 h-4" /></Button>
                             </div>
                             <div className="flex gap-2">
-                                <Textarea
-                                    placeholder={annotation ? "Add a comment about this annotation..." : "Type your feedback..."}
-                                    value={commentText}
-                                    onChange={e => setCommentText(e.target.value)}
-                                    className="flex-1 bg-zinc-800/50 border-zinc-700 resize-none"
-                                    rows={2}
-                                />
+                                <Textarea placeholder={annotation ? "Add a comment about this annotation..." : "Type your feedback..."}
+                                    value={commentText} onChange={e => setCommentText(e.target.value)}
+                                    className="flex-1 bg-zinc-800/50 border-zinc-700 resize-none" rows={2} />
                                 <Button type="submit" disabled={submitting || (!commentText.trim() && !annotation)}
                                     className="bg-blue-600 hover:bg-blue-500 self-end">
                                     <Send className="w-4 h-4" />
@@ -767,7 +851,7 @@ export default function ShotDetailPage() {
                 </Card>
             </div>
 
-            {/* Simple Video Player Modal */}
+            {/* ============ Video Player Modal ============ */}
             <Dialog open={videoOpen} onOpenChange={setVideoOpen}>
                 <DialogContent className="bg-zinc-900 border-zinc-800 max-w-4xl w-full p-0">
                     <DialogHeader className="p-4 pb-0">
@@ -779,10 +863,156 @@ export default function ShotDetailPage() {
                         </div>
                     </DialogHeader>
                     <div className="p-4 pt-2">
+                        {videoStartFrame && (
+                            <p className="text-xs text-amber-400 mb-2 font-mono flex items-center gap-1">
+                                <Play className="w-3 h-3" /> Jumping to Frame {videoStartFrame} — manually seek to {(videoStartFrame / (shot.fps || 25)).toFixed(2)}s
+                            </p>
+                        )}
                         <div className="relative w-full bg-black rounded-lg overflow-hidden" style={{ paddingTop: '56.25%' }}>
                             <iframe src={videoUrl} className="absolute inset-0 w-full h-full"
                                 allow="autoplay" allowFullScreen title={shot.shot_id} />
                         </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* ============ FEATURE 1 — Version History Modal ============ */}
+            <Dialog open={versionsOpen} onOpenChange={setVersionsOpen}>
+                <DialogContent className="bg-zinc-900 border-zinc-800 max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-zinc-100 flex items-center gap-2">
+                            <History className="w-5 h-5 text-purple-400" />
+                            Version History — {shot.shot_id}
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3 mt-4 max-h-96 overflow-y-auto">
+                        {playblastVersions.map((v, i) => (
+                            <div key={i} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${activeVersionIndex === i ? 'border-purple-500/50 bg-purple-500/10' : 'border-zinc-700 bg-zinc-800/30 hover:border-zinc-600'}`}
+                                onClick={() => { setActiveVersionIndex(i); setVersionsOpen(false); }}>
+                                <div className="w-16 h-10 rounded bg-zinc-700 overflow-hidden flex-shrink-0">
+                                    {getDriveThumbnail(v.url) && (
+                                        <img src={getDriveThumbnail(v.url)} alt={`v${i + 1}`} className="w-full h-full object-cover" />
+                                    )}
+                                </div>
+                                <div className="flex-1">
+                                    <p className="text-sm font-medium text-zinc-200">
+                                        v{i + 1} — {v.name || `Version ${i + 1}`}
+                                        {i === playblastVersions.length - 1 && (
+                                            <span className="ml-2 text-xs text-purple-400">Latest</span>
+                                        )}
+                                    </p>
+                                    <p className="text-xs text-zinc-500">
+                                        {v.uploaded_by && `by ${v.uploaded_by}`}
+                                        {v.uploaded_at && ` · ${format(new Date(v.uploaded_at), 'MMM d, yyyy HH:mm')}`}
+                                    </p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button size="sm" variant="ghost"
+                                        onClick={e => { e.stopPropagation(); setVideoUrl(getDriveEmbed(v.url)); setVideoOpen(true); setVersionsOpen(false); }}
+                                        className="text-zinc-400 hover:text-purple-400">
+                                        <Play className="w-3 h-3" />
+                                    </Button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* ============ FEATURE 5 — Side-by-side comparison ============ */}
+            <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
+                <DialogContent className="bg-zinc-900 border-zinc-800 max-w-6xl w-full">
+                    <DialogHeader>
+                        <div className="flex items-center justify-between">
+                            <DialogTitle className="text-zinc-100 flex items-center gap-2">
+                                <SplitSquareHorizontal className="w-5 h-5 text-blue-400" />
+                                Compare Versions — {shot.shot_id}
+                            </DialogTitle>
+                            <Button variant="ghost" size="icon" onClick={() => setCompareOpen(false)} className="text-zinc-400">
+                                <X className="w-4 h-4" />
+                            </Button>
+                        </div>
+                    </DialogHeader>
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                        {/* Left */}
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                                <Label className="text-zinc-300 text-sm">Left version</Label>
+                                <Select value={String(compareLeftIndex)} onValueChange={v => setCompareLeftIndex(parseInt(v))}>
+                                    <SelectTrigger className="flex-1 bg-zinc-800 border-zinc-700 h-8 text-xs">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-zinc-900 border-zinc-800">
+                                        {playblastVersions.map((v, i) => (
+                                            <SelectItem key={i} value={String(i)}>v{i + 1} — {v.name || `Version ${i + 1}`}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="relative w-full bg-black rounded-lg overflow-hidden" style={{ paddingTop: '56.25%' }}>
+                                <iframe src={getDriveEmbed(playblastVersions[compareLeftIndex]?.url)}
+                                    className="absolute inset-0 w-full h-full" allowFullScreen title="Left version" />
+                            </div>
+                            <p className="text-xs text-zinc-500 text-center">
+                                v{compareLeftIndex + 1} — {playblastVersions[compareLeftIndex]?.name || `Version ${compareLeftIndex + 1}`}
+                            </p>
+                        </div>
+                        {/* Right */}
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                                <Label className="text-zinc-300 text-sm">Right version</Label>
+                                <Select value={String(compareRightIndex)} onValueChange={v => setCompareRightIndex(parseInt(v))}>
+                                    <SelectTrigger className="flex-1 bg-zinc-800 border-zinc-700 h-8 text-xs">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-zinc-900 border-zinc-800">
+                                        {playblastVersions.map((v, i) => (
+                                            <SelectItem key={i} value={String(i)}>v{i + 1} — {v.name || `Version ${i + 1}`}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="relative w-full bg-black rounded-lg overflow-hidden" style={{ paddingTop: '56.25%' }}>
+                                <iframe src={getDriveEmbed(playblastVersions[compareRightIndex]?.url)}
+                                    className="absolute inset-0 w-full h-full" allowFullScreen title="Right version" />
+                            </div>
+                            <p className="text-xs text-zinc-500 text-center">
+                                v{compareRightIndex + 1} — {playblastVersions[compareRightIndex]?.name || `Version ${compareRightIndex + 1}`}
+                            </p>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* ============ FEATURE 4 — Checklist Modal ============ */}
+            <Dialog open={checklistOpen} onOpenChange={setChecklistOpen}>
+                <DialogContent className="bg-zinc-900 border-zinc-800 max-w-sm">
+                    <DialogHeader>
+                        <DialogTitle className="text-zinc-100 flex items-center gap-2">
+                            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                            Approval Checklist
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3 mt-4">
+                        <p className="text-xs text-zinc-500">Check off each stage before marking the shot as Approved.</p>
+                        {DEFAULT_CHECKLIST.map(item => (
+                            <button key={item.id} onClick={() => handleToggleChecklist(item.id)}
+                                className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${checklist[item.id] ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-zinc-700 bg-zinc-800/30 hover:border-zinc-600'}`}>
+                                {checklist[item.id]
+                                    ? <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                                    : <Circle className="w-5 h-5 text-zinc-600 flex-shrink-0" />}
+                                <span className={`font-medium ${checklist[item.id] ? 'text-emerald-300' : 'text-zinc-300'}`}>
+                                    {item.label}
+                                </span>
+                                {checklist[item.id] && <CheckCheck className="w-4 h-4 text-emerald-400 ml-auto" />}
+                            </button>
+                        ))}
+                        {allChecked && (
+                            <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-center">
+                                <p className="text-emerald-400 text-sm font-medium">✅ All stages complete — ready to Approve!</p>
+                            </div>
+                        )}
+                        <Button onClick={() => setChecklistOpen(false)} className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300">Done</Button>
                     </div>
                 </DialogContent>
             </Dialog>
@@ -801,69 +1031,34 @@ export default function ShotDetailPage() {
                             </Button>
                         </div>
                     </DialogHeader>
-
                     <div className="space-y-4 mt-2">
                         {!annotateMode ? (
-                            /* Step 1 — Watch playblast, set frame number, capture */
                             <div className="space-y-4">
-                                <p className="text-sm text-zinc-400">
-                                    Watch the playblast, note the frame you want to annotate, enter it below, then click Capture Frame.
-                                </p>
-
-                                {/* Embedded player */}
+                                <p className="text-sm text-zinc-400">Watch the playblast, note the frame number, then click Capture & Annotate.</p>
                                 <div className="relative w-full bg-black rounded-lg overflow-hidden" style={{ paddingTop: '56.25%' }}>
-                                    <iframe
-                                        ref={iframeRef}
-                                        src={getDriveEmbed(shot.playblast_link)}
-                                        className="absolute inset-0 w-full h-full"
-                                        allow="autoplay"
-                                        allowFullScreen
-                                        title={shot.shot_id}
-                                    />
+                                    <iframe src={getDriveEmbed(activeVersion?.url || shot.playblast_link)}
+                                        className="absolute inset-0 w-full h-full" allow="autoplay" allowFullScreen title={shot.shot_id} />
                                 </div>
-
                                 <div className="flex items-center gap-4">
                                     <div className="flex items-center gap-2">
                                         <Label className="text-zinc-300 whitespace-nowrap">Frame Number</Label>
-                                        <Input
-                                            type="number"
-                                            min="0"
-                                            max={shot.frames || 9999}
-                                            value={currentFrame}
+                                        <Input type="number" min="0" max={shot.frames || 9999} value={currentFrame}
                                             onChange={e => setCurrentFrame(parseInt(e.target.value) || 0)}
-                                            className="w-24 bg-zinc-800 border-zinc-700 text-zinc-100"
-                                        />
-                                        <span className="text-zinc-500 text-sm">
-                                            = {(currentFrame / (shot.fps || 25)).toFixed(2)}s
-                                        </span>
+                                            className="w-24 bg-zinc-800 border-zinc-700 text-zinc-100" />
+                                        <span className="text-zinc-500 text-sm">= {(currentFrame / (shot.fps || 25)).toFixed(2)}s</span>
                                     </div>
                                     <Button onClick={handleCaptureFrame} className="bg-amber-600 hover:bg-amber-500">
-                                        <Camera className="w-4 h-4 mr-2" />
-                                        Capture & Annotate
+                                        <Camera className="w-4 h-4 mr-2" />Capture & Annotate
                                     </Button>
                                 </div>
-
                                 <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700 text-xs text-zinc-400 space-y-1">
-                                    <p>💡 <strong className="text-zinc-300">How to annotate:</strong></p>
-                                    <p>1. Play the video and pause at the frame you want to review</p>
-                                    <p>2. Note the frame number (visible in the player or count manually)</p>
-                                    <p>3. Enter the frame number above and click "Capture & Annotate"</p>
-                                    <p>4. Draw your notes on the captured frame</p>
-                                    <p>5. Add a comment and submit — the artist will see your annotation</p>
+                                    <p>💡 Pause the video at the frame you want to annotate, note the frame number, enter it above, then click Capture.</p>
                                 </div>
                             </div>
                         ) : (
-                            /* Step 2 — Draw on captured frame */
-                            <AnnotationCanvas
-                                imageData={capturedFrame}
-                                fps={shot.fps || 25}
-                                frameNumber={currentFrame}
-                                onSave={(dataUrl) => {
-                                    handleAnnotationSave(dataUrl);
-                                    setReviewOpen(false);
-                                }}
-                                onCancel={() => setAnnotateMode(false)}
-                            />
+                            <AnnotationCanvas imageData={capturedFrame} fps={shot.fps || 25} frameNumber={currentFrame}
+                                onSave={(dataUrl) => { setAnnotation(dataUrl); setAnnotateMode(false); setReviewOpen(false); toast.success('Annotation ready — add your comment and submit'); }}
+                                onCancel={() => setAnnotateMode(false)} />
                         )}
                     </div>
                 </DialogContent>
@@ -879,7 +1074,7 @@ export default function ShotDetailPage() {
                         <div className="space-y-2">
                             <Label className="text-zinc-300">Description</Label>
                             <Textarea value={editForm.description} onChange={e => setEditForm({ ...editForm, description: e.target.value })}
-                                placeholder="Describe the shot..." className="bg-zinc-950 border-zinc-800 text-zinc-100" rows={2} />
+                                className="bg-zinc-950 border-zinc-800 text-zinc-100" rows={2} />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
@@ -929,7 +1124,7 @@ export default function ShotDetailPage() {
                 </DialogContent>
             </Dialog>
 
-            {/* Enlarged annotation image */}
+            {/* Enlarged image */}
             {enlargedImage && (
                 <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
                     onClick={() => setEnlargedImage(null)}>
