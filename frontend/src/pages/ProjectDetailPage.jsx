@@ -306,64 +306,90 @@ export default function ProjectDetailPage() {
     };
 
     const handleSubmitUpload = async (e) => {
-        e.preventDefault();
-        if (!uploadForm.playblast_url && !uploadForm.scene_url) {
-            toast.error('Please paste at least one file link');
-            return;
-        }
+    e.preventDefault();
+    if (!uploadForm.playblast_url && !uploadForm.scene_url) {
+        toast.error('Please paste at least one file link');
+        return;
+    }
 
-        // Validate naming
-        const shotBase = uploadShot.shot_id; // e.g. ep004_sh083
-        const validateName = (url, type) => {
-            if (!url) return true;
-            const fileId = extractDriveFileId(url);
-            if (!fileId) { toast.error(`Invalid Google Drive link for ${type}`); return false; }
-            return true;
-        };
+    setUploading(true);
+    try {
+        const existingUploads = uploadShot.uploaded_versions || [];
+        const newUploads = [...existingUploads];
+        const updateData = {};
 
-        if (!validateName(uploadForm.playblast_url, 'playblast')) return;
-        if (!validateName(uploadForm.scene_url, 'scene file')) return;
+        if (uploadForm.playblast_url) {
+            const movVersions = existingUploads.filter(u => u.type === 'playblast');
+            const nextMovVersion = (movVersions.length + 1).toString().padStart(3, '0');
+            const movName = `${uploadShot.shot_id}.${nextMovVersion}.mov`;
 
-        setUploading(true);
-        try {
-            const updateData = {};
-
-            // Get existing uploads to determine version number
-            const existingUploads = uploadShot.uploaded_versions || [];
-            const movVersions = existingUploads.filter(u => u.type === 'playblast').length;
-            const sceneVersions = existingUploads.filter(u => u.type === 'scene').length;
-            const nextMovVersion = (movVersions + 1).toString().padStart(3, '0');
-            const nextSceneVersion = (sceneVersions + 1).toString().padStart(3, '0');
-
-            const newUploads = [...existingUploads];
-
-            if (uploadForm.playblast_url) {
-                const movName = `${shotBase}.${nextMovVersion}.mov`;
-                newUploads.push({ type: 'playblast', url: uploadForm.playblast_url, name: movName, uploaded_at: new Date().toISOString(), uploaded_by: user?.name });
-                updateData.playblast_link = uploadForm.playblast_url;
-            }
-            if (uploadForm.scene_url) {
-                const sceneExt = 'ma'; // Maya scene file
-                const sceneName = `${shotBase}.${nextSceneVersion}.${sceneExt}`;
-                newUploads.push({ type: 'scene', url: uploadForm.scene_url, name: sceneName, uploaded_at: new Date().toISOString(), uploaded_by: user?.name });
-                updateData.scene_link = uploadForm.scene_url;
+            // ✅ Push OLD playblast into versions before overwriting
+            if (uploadShot.playblast_link && !existingUploads.find(u => u.url === uploadShot.playblast_link)) {
+                newUploads.unshift({
+                    type: 'playblast',
+                    url: uploadShot.playblast_link,
+                    name: `${uploadShot.shot_id}.001.mov`,
+                    uploaded_at: uploadShot.created_at || new Date().toISOString(),
+                    uploaded_by: 'Original',
+                    version: 1,
+                });
             }
 
-            // Auto-set status to "for_review" and notify supervisor
-            updateData.status = 'for_review';
-            updateData.uploaded_versions = newUploads;
+            // ✅ Push NEW version into versions
+            newUploads.push({
+                type: 'playblast',
+                url: uploadForm.playblast_url,
+                name: movName,
+                uploaded_at: new Date().toISOString(),
+                uploaded_by: user?.name,
+                version: movVersions.length + 2,
+            });
 
-            await updateShot(projectId, uploadEpisodeId, uploadShot.id, updateData);
-            toast.success('Files submitted for review! Supervisor has been notified.');
-            setUploadOpen(false);
-            loadEpisodeShots(uploadEpisodeId);
-        } catch (error) {
-            toast.error(error.response?.data?.detail || 'Failed to submit files');
-        } finally {
-            setUploading(false);
+            updateData.playblast_link = uploadForm.playblast_url;
         }
-    };
 
+        if (uploadForm.scene_url) {
+            const sceneVersions = existingUploads.filter(u => u.type === 'scene');
+            const nextSceneVersion = (sceneVersions.length + 1).toString().padStart(3, '0');
+            const sceneName = `${uploadShot.shot_id}.${nextSceneVersion}.ma`;
+
+            // Push old scene into versions
+            if (uploadShot.scene_link && !existingUploads.find(u => u.url === uploadShot.scene_link)) {
+                newUploads.unshift({
+                    type: 'scene',
+                    url: uploadShot.scene_link,
+                    name: `${uploadShot.shot_id}.001.ma`,
+                    uploaded_at: uploadShot.created_at || new Date().toISOString(),
+                    uploaded_by: 'Original',
+                    version: 1,
+                });
+            }
+
+            newUploads.push({
+                type: 'scene',
+                url: uploadForm.scene_url,
+                name: sceneName,
+                uploaded_at: new Date().toISOString(),
+                uploaded_by: user?.name,
+                version: sceneVersions.length + 2,
+            });
+
+            updateData.scene_link = uploadForm.scene_url;
+        }
+
+        updateData.status = 'for_review';
+        updateData.uploaded_versions = newUploads;
+
+        await updateShot(projectId, uploadEpisodeId, uploadShot.id, updateData);
+        toast.success('Files submitted for review! Supervisor has been notified.');
+        setUploadOpen(false);
+        loadEpisodeShots(uploadEpisodeId);
+    } catch (error) {
+        toast.error(error.response?.data?.detail || 'Failed to submit files');
+    } finally {
+        setUploading(false);
+    }
+};
     // ============ TEAM HANDLERS ============
     const handleAddMember = async (e) => {
         e.preventDefault();
